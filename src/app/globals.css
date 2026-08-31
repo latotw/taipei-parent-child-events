@@ -44,6 +44,11 @@ textarea {
   field-sizing: content;
 }
 
+/* 分頁是用 hidden 屬性切換的，確保不會被其他 display 規則蓋掉 */
+[hidden] {
+  display: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

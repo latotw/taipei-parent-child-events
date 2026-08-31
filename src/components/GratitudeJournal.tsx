@@ -15,6 +15,7 @@ import HistoryPanel from "@/components/HistoryPanel";
 import NotesField from "@/components/NotesField";
 import PassphraseCard from "@/components/PassphraseCard";
 import { usePassphrase } from "@/components/PassphraseProvider";
+import TabBar, { type TabId } from "@/components/TabBar";
 import ThreeThingsList from "@/components/ThreeThingsList";
 import WorkspaceCard from "@/components/WorkspaceCard";
 import WorkspaceFeed from "@/components/WorkspaceFeed";
@@ -66,6 +67,7 @@ export default function GratitudeJournal() {
   const [busy, setBusy] = useState<"draft" | "submitted" | null>(null);
   // 每次成功上傳就 +1，讓下面的共享列表重新讀一次
   const [syncedAt, setSyncedAt] = useState(0);
+  const [tab, setTab] = useState<TabId>("write");
   const { passphrase, hasPassphrase } = usePassphrase();
   const { workspace } = useWorkspace();
 
@@ -283,41 +285,125 @@ export default function GratitudeJournal() {
   const canSubmit = filledCount > 0;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="mx-auto w-full max-w-md px-4 pt-6 pb-4"
-    >
-      <header className="mb-5">
+    <div className="mx-auto w-full max-w-md px-4 pt-6 pb-4">
+      <header className="mb-4">
         <p className="text-sm text-ink-muted">{greeting}，</p>
         <h1 className="mt-1 text-2xl leading-snug font-semibold text-ink">
-          今天有什麼值得感謝？
+          {tab === "write" ? "今天有什麼值得感謝？" : "回頭看看那些小事"}
         </h1>
       </header>
 
-      <div className="space-y-4">
-        <DateNavigator
-          dateKey={dateKey}
-          status={entry.status}
-          onChange={handleDateChange}
-        />
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "write", label: "寫日記" },
+          {
+            id: "history",
+            label: "回顧",
+            badge: { kind: "count", value: localCiphers.length },
+          },
+          {
+            id: "settings",
+            label: "設定",
+            // 沒設密碼就寫不了，用小紅點提醒
+            badge: hasPassphrase ? undefined : { kind: "attention" },
+          },
+        ]}
+      />
 
+      {/* 分頁用 hidden 切換而不是卸載，這樣月曆選到的日期、解密結果都不會被清掉 */}
+      <form
+        id="panel-write"
+        role="tabpanel"
+        aria-label="寫日記"
+        hidden={tab !== "write"}
+        onSubmit={handleSubmit}
+      >
+        <div className="space-y-4">
+          <DateNavigator
+            dateKey={dateKey}
+            status={entry.status}
+            onChange={handleDateChange}
+          />
+
+          <ThreeThingsList
+            items={entry.items}
+            maxItems={MAX_ITEMS}
+            onItemChange={handleItemChange}
+            onAdd={handleAddItem}
+            onRemove={handleRemoveItem}
+          />
+
+          <NotesField
+            value={entry.notes}
+            maxLength={NOTES_MAX_LENGTH}
+            onChange={handleNotesChange}
+          />
+
+          <WorkspaceFeed
+            dateKey={dateKey}
+            refreshToken={syncedAt}
+            active={tab === "write"}
+            onRestore={handleRestore}
+          />
+        </div>
+
+        <p
+          aria-live="polite"
+          className={`mt-4 min-h-6 text-center text-xs transition-opacity ${
+            feedback
+              ? `opacity-100 ${
+                  feedback.tone === "success" ? "text-leaf" : "text-clay-deep"
+                }`
+              : "opacity-0"
+          }`}
+        >
+          {feedback?.text ?? "\u3000"}
+        </p>
+
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-muted">
+          {formatFullDate(dateKey)}的明文只存在這個頁面的記憶中，重新整理後會重新開始；
+          只有加密字串適合離開這台裝置。
+        </p>
+
+        <ActionBar
+          canSave={hasContent}
+          canSubmit={canSubmit}
+          isSubmitted={entry.status === "submitted"}
+          hasPassphrase={hasPassphrase}
+          busy={busy}
+          onSaveDraft={handleSaveDraft}
+        />
+      </form>
+
+      <div
+        id="panel-history"
+        role="tabpanel"
+        aria-label="回顧"
+        hidden={tab !== "history"}
+      >
+        <HistoryPanel
+          localCiphers={localCiphers}
+          refreshToken={syncedAt}
+          active={tab === "history"}
+          onJumpToDate={(nextKey) => {
+            handleDateChange(nextKey);
+            setTab("write");
+          }}
+        />
+      </div>
+
+      <div
+        id="panel-settings"
+        role="tabpanel"
+        aria-label="設定"
+        hidden={tab !== "settings"}
+        className="space-y-4"
+      >
         <PassphraseCard />
 
         <WorkspaceCard />
-
-        <ThreeThingsList
-          items={entry.items}
-          maxItems={MAX_ITEMS}
-          onItemChange={handleItemChange}
-          onAdd={handleAddItem}
-          onRemove={handleRemoveItem}
-        />
-
-        <NotesField
-          value={entry.notes}
-          maxLength={NOTES_MAX_LENGTH}
-          onChange={handleNotesChange}
-        />
 
         <CipherPanel
           // 換日期或產生新的加密字串時重設面板；單純編輯表單不會（savedAt 不變）。
@@ -325,47 +411,7 @@ export default function GratitudeJournal() {
           cipher={entry.cipher}
           onRestore={handleRestore}
         />
-
-        <WorkspaceFeed
-          dateKey={dateKey}
-          refreshToken={syncedAt}
-          onRestore={handleRestore}
-        />
-
-        <HistoryPanel
-          localCiphers={localCiphers}
-          refreshToken={syncedAt}
-          onJumpToDate={handleDateChange}
-        />
       </div>
-
-      <p
-        aria-live="polite"
-        className={`mt-4 min-h-6 text-center text-xs transition-opacity ${
-          feedback
-            ? `opacity-100 ${
-                feedback.tone === "success" ? "text-leaf" : "text-clay-deep"
-              }`
-            : "opacity-0"
-        }`}
-      >
-        {feedback?.text ?? "　"}
-      </p>
-
-      <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-muted">
-        {formatFullDate(dateKey)}的明文只存在這個頁面的記憶中，重新整理後會重新開始；
-        只有加密字串適合離開這台裝置。
-      </p>
-
-      <ActionBar
-        canSave={hasContent}
-        canSubmit={canSubmit}
-        isSubmitted={entry.status === "submitted"}
-        hasPassphrase={hasPassphrase}
-        busy={busy}
-        onSaveDraft={handleSaveDraft}
-      />
-
-    </form>
+    </div>
   );
 }

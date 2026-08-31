@@ -149,8 +149,8 @@ export default function BackupPanel({ localCiphers }: Props) {
   };
 
   return (
-    <div className="border-t border-line pt-4">
-      <h3 className="text-sm font-medium text-ink">資料匯出（JSON Backup）</h3>
+    <div>
+      <h2 className="text-base font-medium text-ink">資料匯出（JSON Backup）</h2>
       <p className="mt-1 text-xs leading-relaxed text-ink-muted">
         隨時把完整紀錄下載到自己的裝置。
       </p>
