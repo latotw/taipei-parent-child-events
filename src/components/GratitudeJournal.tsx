@@ -54,6 +54,12 @@ function createEmptyEntry(): DayEntry {
 /** 理論上不會用到（切換日期時就會建立當天的資料），純粹讓型別安全。 */
 const EMPTY_FALLBACK = createEmptyEntry();
 
+const TAB_HEADINGS: Record<TabId, string> = {
+  write: "今天有什麼值得感謝？",
+  history: "回頭看看那些小事",
+  settings: "密碼與共享設定",
+};
+
 type Feedback = { tone: "info" | "success" | "error"; text: string };
 
 /** 這個元件只在瀏覽器端渲染（見 JournalLoader），所以可以直接讀本地時間。 */
@@ -71,9 +77,9 @@ export default function GratitudeJournal() {
   const { passphrase, hasPassphrase } = usePassphrase();
   const { workspace } = useWorkspace();
 
-  // 提示訊息幾秒後自動淡出。
+  // 成功／一般提示幾秒後自動淡出；錯誤留在畫面上，等下一個動作才清掉。
   useEffect(() => {
-    if (!feedback) return;
+    if (!feedback || feedback.tone === "error") return;
     const timer = setTimeout(() => setFeedback(null), 3200);
     return () => clearTimeout(timer);
   }, [feedback]);
@@ -173,7 +179,7 @@ export default function GratitudeJournal() {
     if (!passphrase) {
       setFeedback({
         tone: "error",
-        text: "請先在上方設定共用解密密碼，內容才能加密後再離開這台裝置。",
+        text: "請先到「設定」分頁設定共用解密密碼，內容才能加密後再離開這台裝置。",
       });
       return;
     }
@@ -289,7 +295,7 @@ export default function GratitudeJournal() {
       <header className="mb-4">
         <p className="text-sm text-ink-muted">{greeting}，</p>
         <h1 className="mt-1 text-2xl leading-snug font-semibold text-ink">
-          {tab === "write" ? "今天有什麼值得感謝？" : "回頭看看那些小事"}
+          {TAB_HEADINGS[tab]}
         </h1>
       </header>
 
@@ -298,11 +304,9 @@ export default function GratitudeJournal() {
         onChange={setTab}
         tabs={[
           { id: "write", label: "寫日記" },
-          {
-            id: "history",
-            label: "回顧",
-            badge: { kind: "count", value: localCiphers.length },
-          },
+          // 這裡不放筆數：本機 state 重新整理就歸零，會比實際紀錄少。
+          // 準確的天數由「回顧月曆」卡片自己顯示（含 Workspace 的資料）。
+          { id: "history", label: "回顧" },
           {
             id: "settings",
             label: "設定",
@@ -349,20 +353,7 @@ export default function GratitudeJournal() {
           />
         </div>
 
-        <p
-          aria-live="polite"
-          className={`mt-4 min-h-6 text-center text-xs transition-opacity ${
-            feedback
-              ? `opacity-100 ${
-                  feedback.tone === "success" ? "text-leaf" : "text-clay-deep"
-                }`
-              : "opacity-0"
-          }`}
-        >
-          {feedback?.text ?? "\u3000"}
-        </p>
-
-        <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-muted">
+        <p className="mt-4 text-center text-[11px] leading-relaxed text-ink-muted">
           {formatFullDate(dateKey)}的明文只存在這個頁面的記憶中，重新整理後會重新開始；
           只有加密字串適合離開這台裝置。
         </p>
@@ -373,6 +364,7 @@ export default function GratitudeJournal() {
           isSubmitted={entry.status === "submitted"}
           hasPassphrase={hasPassphrase}
           busy={busy}
+          message={feedback}
           onSaveDraft={handleSaveDraft}
         />
       </form>
