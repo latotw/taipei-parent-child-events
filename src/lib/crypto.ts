@@ -143,16 +143,15 @@ function additionalData(iterations: number): Bytes {
 }
 
 /**
- * 把日記物件加密成單一字串。
+ * 把任意字串加密成 envelope。日記與密碼驗證字串都走這裡。
  *
- * @throws {CryptoError} 密碼為空（EMPTY_PASSPHRASE）或沒有內容（EMPTY_CONTENT）
+ * @throws {CryptoError} 密碼為空（EMPTY_PASSPHRASE）
  */
-export async function encryptJournal(
-  payload: JournalPayload,
+export async function encryptText(
+  plaintext: string,
   passphrase: string,
 ): Promise<string> {
   assertPassphrase(passphrase);
-  assertHasContent(payload);
 
   const subtle = getSubtle();
   const salt = randomBytes(SALT_BYTES);
@@ -164,7 +163,7 @@ export async function encryptJournal(
   const ciphertext = await subtle.encrypt(
     { name: "AES-GCM", iv, additionalData: additionalData(KDF_ITERATIONS) },
     key,
-    new TextEncoder().encode(JSON.stringify(payload)),
+    new TextEncoder().encode(plaintext),
   );
 
   return [
@@ -238,16 +237,15 @@ function asJournalPayload(value: unknown): JournalPayload {
 }
 
 /**
- * 用密碼把加密字串還原成原本的日記物件。
+ * 用密碼把 envelope 還原成原本的字串。
  *
  * @throws {CryptoError} 密碼為空（EMPTY_PASSPHRASE）、沒給字串（EMPTY_CIPHERTEXT）、
- * 格式不對（BAD_ENVELOPE）、密碼錯誤或內容被改過（WRONG_PASSPHRASE）、
- * 內容結構不符（CORRUPT_PAYLOAD）
+ * 格式不對（BAD_ENVELOPE）、密碼錯誤或內容被改過（WRONG_PASSPHRASE）
  */
-export async function decryptJournal(
+export async function decryptText(
   envelope: string,
   passphrase: string,
-): Promise<JournalPayload> {
+): Promise<string> {
   assertPassphrase(passphrase);
   if (envelope.trim() === "") {
     throw new CryptoError("EMPTY_CIPHERTEXT", "請先貼上要解密的加密字串。");
@@ -273,9 +271,37 @@ export async function decryptJournal(
     );
   }
 
+  return new TextDecoder().decode(plaintext);
+}
+
+/**
+ * 把日記物件加密成單一字串。
+ *
+ * @throws {CryptoError} 密碼為空（EMPTY_PASSPHRASE）或沒有內容（EMPTY_CONTENT）
+ */
+export async function encryptJournal(
+  payload: JournalPayload,
+  passphrase: string,
+): Promise<string> {
+  assertPassphrase(passphrase);
+  assertHasContent(payload);
+  return encryptText(JSON.stringify(payload), passphrase);
+}
+
+/**
+ * 用密碼把加密字串還原成原本的日記物件。
+ *
+ * @throws {CryptoError} 同 decryptText，另加內容結構不符（CORRUPT_PAYLOAD）
+ */
+export async function decryptJournal(
+  envelope: string,
+  passphrase: string,
+): Promise<JournalPayload> {
+  const plaintext = await decryptText(envelope, passphrase);
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(new TextDecoder().decode(plaintext));
+    parsed = JSON.parse(plaintext);
   } catch {
     throw new CryptoError(
       "CORRUPT_PAYLOAD",
@@ -284,6 +310,32 @@ export async function decryptJournal(
   }
 
   return asJournalPayload(parsed);
+}
+
+/**
+ * 共用密碼的驗證字串（probe）：把一段固定文字加密後放到 workspace 上，
+ * 另一台裝置就能判斷「自己輸入的密碼跟對方是不是同一組」，
+ * 而伺服器看到的仍然只是一段 envelope。
+ *
+ * 這不會多洩漏什麼：日記本身的 envelope 一樣可以拿來離線試密碼，
+ * 真正的防線是 PBKDF2 的成本與密碼強度。
+ */
+const PASSPHRASE_PROBE_TEXT = "gratitude-journal/passphrase-probe/v1";
+
+export function createPassphraseProbe(passphrase: string): Promise<string> {
+  return encryptText(PASSPHRASE_PROBE_TEXT, passphrase);
+}
+
+/** 密碼是否與 probe 相符。任何錯誤（含格式錯誤）都當成不相符。 */
+export async function passphraseMatchesProbe(
+  probe: string,
+  passphrase: string,
+): Promise<boolean> {
+  try {
+    return (await decryptText(probe, passphrase)) === PASSPHRASE_PROBE_TEXT;
+  } catch {
+    return false;
+  }
 }
 
 /** 給 UI 顯示用的說明文字。 */

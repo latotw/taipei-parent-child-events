@@ -22,6 +22,11 @@ type PassphraseContextValue = {
   hasPassphrase: boolean;
   /** 密碼長度，只用來顯示遮罩點點，不外流內容 */
   length: number;
+  /**
+   * 每次設定或清除就 +1。要「密碼換了就重算」的地方請用這個當 key，
+   * 不要把密碼本身放進 cache key 或 state 裡多存一份。
+   */
+  version: number;
   setPassphrase: (value: string) => void;
   clearPassphrase: () => void;
 };
@@ -32,19 +37,28 @@ export const MIN_PASSPHRASE_LENGTH = 6;
 
 export function PassphraseProvider({ children }: { children: ReactNode }) {
   const [passphrase, setValue] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
 
-  const setPassphrase = useCallback((value: string) => setValue(value), []);
-  const clearPassphrase = useCallback(() => setValue(null), []);
+  const setPassphrase = useCallback((value: string) => {
+    setValue(value);
+    setVersion((current) => current + 1);
+  }, []);
+
+  const clearPassphrase = useCallback(() => {
+    setValue(null);
+    setVersion((current) => current + 1);
+  }, []);
 
   const value = useMemo<PassphraseContextValue>(
     () => ({
       passphrase,
       hasPassphrase: passphrase !== null,
       length: passphrase?.length ?? 0,
+      version,
       setPassphrase,
       clearPassphrase,
     }),
-    [passphrase, setPassphrase, clearPassphrase],
+    [passphrase, version, setPassphrase, clearPassphrase],
   );
 
   return (

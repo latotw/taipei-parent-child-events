@@ -1,8 +1,9 @@
 # 感恩日記 Gratitude Journal
 
 一個溫暖、簡約、Mobile-First 的感恩日記首頁，使用 Next.js（App Router）＋ TypeScript ＋ Tailwind CSS。
-日記內容在「暫存 / 送出」之前就會用瀏覽器標準的 Web Crypto API（AES-256-GCM）在客戶端加密完成。
-目前所有狀態都以 React state 保存在頁面記憶體中，**尚未串接資料庫**，重新整理後會回到空白狀態。
+日記內容在「暫存 / 送出」之前就會用瀏覽器標準的 Web Crypto API（AES-256-GCM）在客戶端加密完成，
+再同步到兩人共用的 Supabase Workspace——伺服器端只看得到加密字串。
+沒設定 Supabase 也能用，只是不同步。
 
 > 註：本 repo 原有的 `activities.json`、`親子館活動_*.json` 等資料檔案並未變動，仍保留在根目錄。
 
@@ -19,8 +20,14 @@ npm run dev      # http://localhost:3000
 npm run build    # 產生 production build（同時做 TypeScript 型別檢查）
 npm run start    # 啟動 production server
 npm run lint     # ESLint
-npm run test:crypto  # 加密模組的行為測試（Node 內建 test runner）
+npm test             # 加密模組 + 同步層的測試（Node 內建 test runner）
+npm run test:crypto  # 只跑加密模組
+npm run test:sync    # 只跑同步層的純函式與錯誤對照
 ```
+
+要開啟兩人同步，把 `.env.example` 複製成 `.env.local` 並填入 Supabase 的兩個值，
+再到 SQL Editor 執行 `supabase/schema.sql`，最後在 Authentication → Providers
+開啟 **Anonymous sign-ins**（本專案不需要註冊帳號，用匿名 session 當身分）。
 
 ## 畫面功能
 
@@ -32,6 +39,8 @@ npm run test:crypto  # 加密模組的行為測試（Node 內建 test runner）
 | 共用解密密碼 | 設定／更改／清除密碼的介面，含二次確認、最少 6 字、顯示密碼切換。密碼只放在記憶體裡。 |
 | 暫存 / 送出 | 底部 sticky 按鈕列。有任何內容才能「暫存」；至少寫滿一件事才能「送出」。兩者都會先加密再更新狀態，送出時並會清掉全空的欄位。 |
 | 加密內容與解密驗證 | 可收合面板：顯示這一天的加密字串（可複製、也可貼上外部字串），輸入密碼即可解密還原並「填回表單」。 |
+| 兩人共享 | 建立 Workspace 取得邀請碼，或用邀請碼加入；顯示成員、邀請碼狀態、離開 Workspace。 |
+| 這一天的共享內容 | 從 Workspace 讀回當天兩人的加密字串，在本機解密後顯示；也可以把某一則填回表單。 |
 
 其他細節：
 
@@ -57,13 +66,28 @@ src/
 │   ├── ThreeThingsList.tsx  # 「三件事」動態增減欄位
 │   ├── NotesField.tsx       # 其他 (Notes) 文字方塊
 │   ├── CipherPanel.tsx      # 加密字串顯示 + 解密驗證 + 填回表單
+│   ├── WorkspaceProvider.tsx # Workspace 狀態（自動連線、建立、加入、離開）
+│   ├── WorkspaceCard.tsx    # 夫妻配對與邀請碼介面
+│   ├── WorkspaceFeed.tsx    # 當天兩人的加密資料，讀回後在本機解密
 │   ├── ActionBar.tsx        # 暫存 / 送出（都會先加密）
 │   └── StatusBadge.tsx      # 當日狀態標籤
 └── lib/
     ├── crypto.ts            # AES-GCM 加解密模組
     ├── crypto.test.mts      # 加密模組測試
     ├── date.ts              # 日期 key、格式化、問候語
-    └── types.ts             # DayEntry / CipherRecord / JournalPayload
+    ├── types.ts             # DayEntry / CipherRecord / JournalPayload
+    └── supabase/
+        ├── client.ts        # 瀏覽器端 Supabase client（沒設定就整組關閉）
+        ├── errors.ts        # SyncError 與 Postgres 錯誤代碼對照
+        ├── invite.ts        # 邀請碼／標籤的純函式
+        ├── workspace.ts     # 登入、建立/加入 Workspace、加密日記讀寫
+        └── workspace.test.mts
+
+supabase/
+├── schema.sql               # 資料表、RLS、邀請機制的 RPC
+└── tests/
+    ├── 00-emulate-supabase.sql  # 在本機 Postgres 補上 auth schema 與角色
+    └── 01-rls.test.sql          # RLS / 邀請碼 / trigger / CHECK 的行為測試
 ```
 
 ## 加密設計
@@ -98,6 +122,65 @@ GJ1.<iterations>.<salt>.<iv>.<ciphertext+tag>
 需要注意的限制：Web Crypto 只在 secure context（HTTPS 或 localhost）可用；
 另外密碼強度就是安全上限，PBKDF2 能拖慢暴力破解但救不了太短的密碼。
 
+## 兩人共享（多租戶）
+
+### 資料表
+
+`supabase/schema.sql` 建三張表，日記那張**只有**四樣東西是資料本體：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `workspace_id` | 屬於哪一對的空間 |
+| `entry_date` | 日期（`date`） |
+| `author_label` | 使用者標籤（顯示用暱稱，由 trigger 從成員資料帶入） |
+| `ciphertext` | AES-256-GCM envelope |
+
+另外有 `author_id`（RLS 用來判斷「只能改自己的」）與時間戳記。
+`ciphertext` 有 CHECK 約束**只接受 envelope 格式**，所以就算客戶端寫錯，
+明文也不可能進到資料庫——這是「伺服器端無從得知明文」的第二道保險。
+
+### 邀請機制
+
+```
+User A ──create_workspace(label, probe)──▶ workspace + 邀請碼（10 碼 hex，40 bits 亂數）
+                                            │
+                        把 9F3A-1C7B-2D 給另一半
+                                            ▼
+User B ──join_workspace(code, label)────▶ 成為同一個 workspace 的成員（上限兩人）
+                                            │
+                              湊滿兩人 → 邀請碼自動失效
+```
+
+兩個 RPC 都是 `security definer`：非成員讀不到 `workspaces`（RLS），
+所以「用邀請碼查 workspace」這件事只能由函式代辦。其他細節：
+
+- 邀請碼用 `gen_random_bytes` 產生（不是 `random()`），預設 7 天到期。
+- 「不存在」與「已過期」回同一個錯誤，不給猜碼的人任何提示。
+- 成員可以 `rotate_invite_code()` 重新產生；舊碼立刻失效。
+- 未登入的 `anon` 角色對三張表都沒有任何權限。
+
+### 兩人各自的密碼
+
+**兩人必須使用同一組共用密碼**，否則解不開對方的內容——密碼是唯一的金鑰來源，
+伺服器沒有任何備份。為了不讓人踩到這個坑，workspace 上會存一份
+`passphrase_check`（用共用密碼加密的固定字串）：
+
+- 建立 workspace 時若已設好密碼，就順手登記。
+- 之後有人輸入密碼，客戶端會拿它比對，不一致就直接在畫面上警告。
+- 真的解不開某一則時，那一則會顯示「兩人要使用同一組共用密碼」，而不是靜靜地空白。
+
+### 寫入與讀取的順序
+
+```
+表單 ──encryptJournal()──▶ envelope ──pushEntry()──▶ Supabase
+                                                        │
+Supabase ──pullEntries()──▶ envelope ──decryptJournal()──▶ 畫面
+```
+
+加密一定發生在網路之前：`persist()` 是先加密成功才會 `pushEntry`，
+上傳失敗也只是提示「已在本機加密，但同步失敗」，內容不會消失。
+匿名登入的 JWT 會存在 localStorage（那是身分，不是金鑰）；共用密碼只在記憶體裡。
+
 ## 設計方向
 
 暖色紙感的單一亮色主題，色票定義在 `globals.css` 的 `@theme` 中（Tailwind v4）：
@@ -110,8 +193,17 @@ GJ1.<iterations>.<salt>.<iv>.<ciphertext+tag>
 
 版面以 `max-w-md` 為主，觸控目標至少 44px，底部按鈕列有 `env(safe-area-inset-bottom)` 的安全間距。
 
+## 測試
+
+| 範圍 | 怎麼跑 |
+| --- | --- |
+| 加密模組（roundtrip、錯誤代碼、竄改偵測） | `npm run test:crypto` |
+| 同步層純函式與錯誤對照 | `npm run test:sync` |
+| 型別與建置 | `npm run build` |
+| RLS / 邀請碼 / trigger / CHECK | 對一個**本機**測試用 Postgres 依序執行 `supabase/tests/00-emulate-supabase.sql`、`supabase/schema.sql`、`supabase/tests/01-rls.test.sql`（測試檔含 `truncate`，不要對正式專案執行） |
+
 ## 後續可以接的東西
 
-- 串接資料庫或 API（在 `persist()` 加密成功之後把 `cipher.text` 送出去）
+- Realtime：`schema.sql` 最後有一行註解掉的 publication，開啟後另一半寫入時可以即時更新
 - 歷史列表與月曆檢視、連續天數統計
-- 登入與多使用者
+- 用 email / OAuth 取代匿名登入，讓同一個人換裝置也能接回 workspace

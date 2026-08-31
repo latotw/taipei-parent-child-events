@@ -8,7 +8,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CryptoError, decryptJournal, encryptJournal } from "./crypto.ts";
+import {
+  CryptoError,
+  createPassphraseProbe,
+  decryptJournal,
+  decryptText,
+  encryptJournal,
+  encryptText,
+  passphraseMatchesProbe,
+} from "./crypto.ts";
 import type { JournalPayload } from "./types.ts";
 
 const PASSPHRASE = "warm-tea-2026";
@@ -160,4 +168,20 @@ test("解得開但結構不符時丟出 CORRUPT_PAYLOAD", async () => {
     await codeOf(() => decryptJournal(forged, PASSPHRASE)),
     "CORRUPT_PAYLOAD",
   );
+});
+
+test("passphrase probe 可以判斷兩邊用的是不是同一組密碼", async () => {
+  const probe = await createPassphraseProbe(PASSPHRASE);
+  assert.equal(await passphraseMatchesProbe(probe, PASSPHRASE), true);
+  assert.equal(await passphraseMatchesProbe(probe, "another-pass"), false);
+  // 壞掉或不是 probe 的字串一律當成不相符，不會丟例外
+  assert.equal(await passphraseMatchesProbe("not-an-envelope", PASSPHRASE), false);
+  const journal = await encryptJournal(payload, PASSPHRASE);
+  assert.equal(await passphraseMatchesProbe(journal, PASSPHRASE), false);
+});
+
+test("encryptText / decryptText 可以處理任意字串（含空字串）", async () => {
+  for (const text of ["", "x", "多行\n內容 🌿", JSON.stringify(payload)]) {
+    assert.equal(await decryptText(await encryptText(text, PASSPHRASE), PASSPHRASE), text);
+  }
 });

@@ -6,7 +6,12 @@ import {
   MIN_PASSPHRASE_LENGTH,
   usePassphrase,
 } from "@/components/PassphraseProvider";
-import { CRYPTO_INFO } from "@/lib/crypto";
+import { useWorkspace } from "@/components/WorkspaceProvider";
+import {
+  CRYPTO_INFO,
+  createPassphraseProbe,
+  passphraseMatchesProbe,
+} from "@/lib/crypto";
 
 const INPUT_CLASS =
   "w-full rounded-2xl border border-line bg-paper px-4 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20";
@@ -42,8 +47,11 @@ function LockIcon({ open }: { open: boolean }) {
 export default function PassphraseCard() {
   const { hasPassphrase, length, setPassphrase, clearPassphrase } =
     usePassphrase();
+  const { workspace, registerProbe } = useWorkspace();
 
   const [editing, setEditing] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [mismatch, setMismatch] = useState(false);
   const [first, setFirst] = useState("");
   const [second, setSecond] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -58,7 +66,7 @@ export default function PassphraseCard() {
     setError(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (first.trim() === "") {
       setError("請輸入密碼。");
       return;
@@ -71,13 +79,31 @@ export default function PassphraseCard() {
       setError("兩次輸入的密碼不一致。");
       return;
     }
+
+    // Workspace 上已經登記過驗證字串時，先確認兩人用的是同一組密碼。
+    // 不相符不阻擋（也許對方剛換過），但會留一行警告。
+    const probe = workspace?.passphraseCheck ?? null;
+    let differs = false;
+    if (probe) {
+      setChecking(true);
+      differs = !(await passphraseMatchesProbe(probe, first));
+      setChecking(false);
+    }
+
     setPassphrase(first);
+    setMismatch(differs);
     setEditing(false);
     resetForm();
+
+    // 還沒有人登記過就把這組登記上去，另一半加入後就能自我檢查。
+    if (workspace && !probe) {
+      await registerProbe(await createPassphraseProbe(first));
+    }
   };
 
   const handleClear = () => {
     clearPassphrase();
+    setMismatch(false);
     setEditing(false);
     resetForm();
   };
@@ -149,7 +175,7 @@ export default function PassphraseCard() {
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  handleSave();
+                  void handleSave();
                 }
               }}
               className={`mt-1 ${INPUT_CLASS}`}
@@ -175,10 +201,15 @@ export default function PassphraseCard() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={handleSave}
-              className="flex-1 rounded-2xl bg-clay px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clay-deep"
+              onClick={() => void handleSave()}
+              disabled={checking}
+              className="flex-1 rounded-2xl bg-clay px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-clay-deep disabled:opacity-50"
             >
-              {hasPassphrase ? "更新密碼" : "設定密碼"}
+              {checking
+                ? "驗證中…"
+                : hasPassphrase
+                  ? "更新密碼"
+                  : "設定密碼"}
             </button>
             {hasPassphrase && (
               <button
@@ -222,6 +253,16 @@ export default function PassphraseCard() {
             </button>
           </div>
         </div>
+      )}
+
+      {mismatch && (
+        <p
+          role="alert"
+          className="mt-3 rounded-2xl bg-clay-soft px-3 py-2 text-xs leading-relaxed text-clay-deep"
+        >
+          這組密碼和 Workspace 裡登記的不一樣。你仍然可以用它寫日記，
+          但可能看不到另一半的內容，對方也解不開你的。
+        </p>
       )}
 
       <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-muted">

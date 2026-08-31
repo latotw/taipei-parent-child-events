@@ -15,7 +15,12 @@ import NotesField from "@/components/NotesField";
 import PassphraseCard from "@/components/PassphraseCard";
 import { usePassphrase } from "@/components/PassphraseProvider";
 import ThreeThingsList from "@/components/ThreeThingsList";
+import WorkspaceCard from "@/components/WorkspaceCard";
+import WorkspaceFeed from "@/components/WorkspaceFeed";
+import { useWorkspace } from "@/components/WorkspaceProvider";
 import { describeCryptoError, encryptJournal } from "@/lib/crypto";
+import { describeSyncError } from "@/lib/supabase/errors";
+import { pushEntry } from "@/lib/supabase/workspace";
 import { formatFullDate, greetingFor, todayKey } from "@/lib/date";
 import type {
   CipherRecord,
@@ -57,7 +62,10 @@ export default function GratitudeJournal() {
   const [greeting] = useState(() => greetingFor(new Date()));
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState<"draft" | "submitted" | null>(null);
+  // 每次成功上傳就 +1，讓下面的共享列表重新讀一次
+  const [syncedAt, setSyncedAt] = useState(0);
   const { passphrase, hasPassphrase } = usePassphrase();
+  const { workspace } = useWorkspace();
 
   // 提示訊息幾秒後自動淡出。
   useEffect(() => {
@@ -191,6 +199,32 @@ export default function GratitudeJournal() {
         };
       });
 
+      // 加密完成之後才輪到網路：離開這台裝置的只有 cipher.text。
+      if (workspace) {
+        try {
+          await pushEntry({
+            workspaceId: workspace.id,
+            entryDate: dateKey,
+            ciphertext: cipherText,
+          });
+          setSyncedAt((value) => value + 1);
+          setFeedback({
+            tone: mode === "draft" ? "info" : "success",
+            text:
+              mode === "draft"
+                ? "已加密並同步暫存。"
+                : "已加密並同步給你們兩人 🌿",
+          });
+        } catch (syncFailure) {
+          // 本機已經加密好了，只是上傳失敗——內容不會因此消失。
+          setFeedback({
+            tone: "error",
+            text: `已在本機加密，但同步失敗：${describeSyncError(syncFailure)}`,
+          });
+        }
+        return;
+      }
+
       setFeedback(
         mode === "draft"
           ? { tone: "info", text: "已加密並暫存，隨時回來繼續寫。" }
@@ -252,6 +286,8 @@ export default function GratitudeJournal() {
 
         <PassphraseCard />
 
+        <WorkspaceCard />
+
         <ThreeThingsList
           items={entry.items}
           maxItems={MAX_ITEMS}
@@ -270,6 +306,12 @@ export default function GratitudeJournal() {
           // 換日期或產生新的加密字串時重設面板；單純編輯表單不會（savedAt 不變）。
           key={`${dateKey}:${entry.cipher?.savedAt ?? "none"}`}
           cipher={entry.cipher}
+          onRestore={handleRestore}
+        />
+
+        <WorkspaceFeed
+          dateKey={dateKey}
+          refreshToken={syncedAt}
           onRestore={handleRestore}
         />
       </div>
