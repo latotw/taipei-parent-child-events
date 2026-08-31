@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import ConfirmButton from "@/components/ConfirmButton";
 import {
   MIN_PASSPHRASE_LENGTH,
   usePassphrase,
@@ -290,13 +291,12 @@ export default function PassphraseCard() {
             >
               更改
             </button>
-            <button
-              type="button"
-              onClick={handleClear}
-              className="rounded-full px-3 py-1.5 text-xs font-medium text-clay-deep underline decoration-clay/40 underline-offset-4 transition-colors hover:decoration-clay"
-            >
-              清除
-            </button>
+            <ConfirmButton
+              label="清除"
+              question="清除後這個分頁就沒有密碼了，已加密的內容會暫時打不開，要重新輸入同一組密碼才能看。"
+              confirmLabel="確定清除"
+              onConfirm={handleClear}
+            />
           </div>
         </div>
       )}

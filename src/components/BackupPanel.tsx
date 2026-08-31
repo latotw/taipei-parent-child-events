@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import ConfirmButton from "@/components/ConfirmButton";
 import { usePassphrase } from "@/components/PassphraseProvider";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 import {
@@ -164,18 +165,23 @@ export default function BackupPanel({ localCiphers }: Props) {
         >
           {busy === "encrypted" ? "準備中…" : "下載加密備份"}
         </button>
-        <button
-          type="button"
-          onClick={() => void handleExport("plain")}
-          disabled={busy !== null}
-          className="flex-1 rounded-2xl border border-clay/40 px-4 py-2.5 text-sm font-medium text-clay-deep transition-colors hover:bg-clay-soft/60 disabled:opacity-50"
-        >
-          {busy === "plain"
-            ? progress
-              ? `解密中 ${progress.done} / ${progress.total}`
-              : "解密中…"
-            : "下載明文備份"}
-        </button>
+        <div className="flex-1">
+          <ConfirmButton
+            variant="outline"
+            block
+            label={
+              busy === "plain"
+                ? progress
+                  ? `解密中 ${progress.done} / ${progress.total}`
+                  : "解密中…"
+                : "下載明文備份"
+            }
+            question="這個檔案是解密後的內容，本身沒有任何保護——任何拿到檔案的人都讀得到。確定要下載嗎？"
+            confirmLabel="確定下載"
+            onConfirm={() => void handleExport("plain")}
+            disabled={busy !== null}
+          />
+        </div>
       </div>
 
       <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">

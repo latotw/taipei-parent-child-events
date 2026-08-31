@@ -22,7 +22,7 @@ import WorkspaceFeed from "@/components/WorkspaceFeed";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 import { describeCryptoError, encryptJournal } from "@/lib/crypto";
 import { describeSyncError } from "@/lib/supabase/errors";
-import { pushEntry } from "@/lib/supabase/workspace";
+import { deleteEntry, pushEntry } from "@/lib/supabase/workspace";
 import { formatFullDate, greetingFor, todayKey } from "@/lib/date";
 import type {
   CipherRecord,
@@ -262,6 +262,23 @@ export default function GratitudeJournal() {
     void persist("submitted");
   };
 
+  /**
+   * 刪掉某一天自己寫的紀錄：Workspace 上的那列與本機的內容都清掉。
+   * 遠端刪除失敗就不動本機，免得畫面上看起來刪了、其實對方還看得到。
+   */
+  const deleteDay = async (date: string) => {
+    try {
+      if (workspace) await deleteEntry(workspace.id, date);
+      setJournal((prev) => ({ ...prev, [date]: createEmptyEntry() }));
+      setSyncedAt((value) => value + 1);
+      setFeedback({ tone: "info", text: `已刪除 ${formatFullDate(date)}的紀錄。` });
+    } catch (caught) {
+      setFeedback({ tone: "error", text: describeSyncError(caught) });
+    }
+  };
+
+  const handleDelete = (date: string) => void deleteDay(date);
+
   /** 解密面板按「填回表單」：用還原出來的內容覆蓋目前的表單。 */
   const handleRestore = (payload: JournalPayload) => {
     const items = payload.items.length > 0 ? payload.items : [""];
@@ -356,6 +373,7 @@ export default function GratitudeJournal() {
             refreshToken={syncedAt}
             active={tab === "write"}
             onRestore={handleRestore}
+            onDelete={handleDelete}
           />
         </div>
 
@@ -385,6 +403,7 @@ export default function GratitudeJournal() {
           localCiphers={localCiphers}
           refreshToken={syncedAt}
           active={tab === "history"}
+          onDelete={handleDelete}
           onJumpToDate={(nextKey) => {
             handleDateChange(nextKey);
             changeTab("write");

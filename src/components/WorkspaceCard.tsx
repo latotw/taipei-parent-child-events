@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import ConfirmButton from "@/components/ConfirmButton";
 import { usePassphrase } from "@/components/PassphraseProvider";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 import { createPassphraseProbe } from "@/lib/crypto";
@@ -247,14 +248,13 @@ export default function WorkspaceCard() {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={leave}
+          <ConfirmButton
+            label="離開這個 Workspace"
+            question="離開後就看不到這個 Workspace 的內容了。你寫過的紀錄會留在裡面，要再回來需要對方重新給你一組邀請碼。"
+            confirmLabel="確定離開"
+            onConfirm={leave}
             disabled={busy}
-            className="text-xs text-clay-deep underline decoration-clay/40 underline-offset-4 transition-colors hover:decoration-clay disabled:opacity-50"
-          >
-            離開這個 Workspace
-          </button>
+          />
         </div>
       )}
 

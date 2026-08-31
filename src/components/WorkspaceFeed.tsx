@@ -17,6 +17,8 @@ type Props = {
   /** 分頁沒被選到時不用去讀 */
   active: boolean;
   onRestore: (payload: JournalPayload) => void;
+  /** 刪掉某一天自己寫的紀錄 */
+  onDelete: (dateKey: string) => void;
 };
 
 export default function WorkspaceFeed({
@@ -24,6 +26,7 @@ export default function WorkspaceFeed({
   refreshToken,
   active,
   onRestore,
+  onDelete,
 }: Props) {
   const { workspace } = useWorkspace();
   const { passphrase, version } = usePassphrase();
@@ -62,6 +65,7 @@ export default function WorkspaceFeed({
             isMine: entry.isMine,
             timestamp: entry.updatedAt,
             restoreLabel: entry.isMine ? "填回表單繼續寫" : "複製到我的表單",
+            deletable: entry.isMine,
             payload: passphrase
               ? await decryptJournal(entry.ciphertext, passphrase).catch(
                   () => null,
@@ -112,6 +116,7 @@ export default function WorkspaceFeed({
         emptyText="這一天還沒有人寫。按「加密並送出」就會同步上去。"
         hasPassphrase={passphrase !== null}
         onRestore={onRestore}
+        onDelete={() => onDelete(dateKey)}
       />
     </section>
   );

@@ -24,6 +24,8 @@ type Props = {
   active: boolean;
   /** 把編輯器切到某一天 */
   onJumpToDate: (dateKey: string) => void;
+  /** 刪掉某一天自己寫的紀錄 */
+  onDelete: (dateKey: string) => void;
 };
 
 export default function HistoryPanel({
@@ -31,6 +33,7 @@ export default function HistoryPanel({
   refreshToken,
   active,
   onJumpToDate,
+  onDelete,
 }: Props) {
   const { workspace } = useWorkspace();
   const { passphrase, version } = usePassphrase();
@@ -125,6 +128,7 @@ export default function HistoryPanel({
             isMine: entry.isMine,
             timestamp: entry.savedAt,
             note: entry.source === "local" ? "未同步" : undefined,
+            deletable: entry.isMine,
             payload: passphrase
               ? await decryptJournal(entry.ciphertext, passphrase).catch(
                   () => null,
@@ -236,6 +240,7 @@ export default function HistoryPanel({
             error={detailSettled ? detail.error : null}
             emptyText="這一天沒有紀錄。"
             hasPassphrase={passphrase !== null}
+            onDelete={() => onDelete(selected)}
           />
         </section>
       )}

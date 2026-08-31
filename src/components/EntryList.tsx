@@ -1,5 +1,6 @@
 "use client";
 
+import ConfirmButton from "@/components/ConfirmButton";
 import type { JournalPayload } from "@/lib/types";
 
 /**
@@ -17,6 +18,8 @@ export type EntryListItem = {
   payload: JournalPayload | null;
   /** 有值時顯示還原按鈕 */
   restoreLabel?: string;
+  /** 自己的紀錄才給刪（別人的由 RLS 擋，UI 也不該給入口） */
+  deletable?: boolean;
 };
 
 type Props = {
@@ -27,6 +30,8 @@ type Props = {
   emptyText: string;
   hasPassphrase: boolean;
   onRestore?: (payload: JournalPayload) => void;
+  /** 刪掉那一天自己寫的紀錄（本機與 Workspace 都會清掉） */
+  onDelete?: (item: EntryListItem) => void;
 };
 
 function formatTime(iso: string): string {
@@ -44,6 +49,7 @@ export default function EntryList({
   emptyText,
   hasPassphrase,
   onRestore,
+  onDelete,
 }: Props) {
   if (error) {
     return (
@@ -100,17 +106,6 @@ export default function EntryList({
                   {item.payload.notes}
                 </p>
               )}
-              {item.restoreLabel && onRestore && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (item.payload) onRestore(item.payload);
-                  }}
-                  className="mt-2 text-xs text-ink-muted underline decoration-line underline-offset-4 transition-colors hover:text-clay-deep"
-                >
-                  {item.restoreLabel}
-                </button>
-              )}
             </>
           ) : (
             <p className="mt-2 text-xs leading-relaxed text-clay-deep">
@@ -119,6 +114,31 @@ export default function EntryList({
                 : "尚未設定共用密碼。到「設定」分頁輸入後就能解密。"}
             </p>
           )}
+
+          {(item.payload && item.restoreLabel && onRestore) ||
+          (item.deletable && onDelete) ? (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {item.payload && item.restoreLabel && onRestore && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (item.payload) onRestore(item.payload);
+                  }}
+                  className="text-xs text-ink-muted underline decoration-line underline-offset-4 transition-colors hover:text-clay-deep"
+                >
+                  {item.restoreLabel}
+                </button>
+              )}
+              {item.deletable && onDelete && (
+                <ConfirmButton
+                  label="刪除這一則"
+                  question="會把這一天你寫的內容從這台裝置與 Workspace 都刪掉，無法復原。想留一份的話可以先匯出備份。"
+                  confirmLabel="確定刪除"
+                  onConfirm={() => onDelete(item)}
+                />
+              )}
+            </div>
+          ) : null}
         </li>
       ))}
     </ul>
