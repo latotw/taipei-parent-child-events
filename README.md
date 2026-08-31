@@ -240,7 +240,9 @@ Supabase ──pullEntries()──▶ envelope ──decryptJournal()──▶ �
 
 ## 設計方向
 
-暖色紙感的單一亮色主題，色票定義在 `globals.css` 的 `@theme` 中（Tailwind v4）：
+暖色紙感的單一亮色主題，色票定義在 `globals.css` 的 `@theme` 中（Tailwind v4）。
+**色票深度是按 WCAG AA（一般文字 4.5:1）算出來的**，不是憑感覺挑的——
+`globals.css` 的註解記了每個關鍵組合的實際比值，改顏色時請一併重算：
 
 - `paper` / `paper-deep`：米白背景
 - `card` / `line`：卡片與描線
@@ -248,7 +250,15 @@ Supabase ──pullEntries()──▶ envelope ──decryptJournal()──▶ �
 - `clay` / `clay-deep` / `clay-soft`：陶土色主要動作
 - `leaf` / `leaf-soft`：「已送出」的綠
 
-版面以 `max-w-md` 為主，觸控目標至少 44px，底部按鈕列有 `env(safe-area-inset-bottom)` 的安全間距。
+版面以 `max-w-md` 為主，底部按鈕列有 `env(safe-area-inset-bottom)` 的安全間距。
+
+觸控目標：一般按鈕至少 44px。月曆例外——320px 寬的螢幕上七欄各要 44px 寬在幾何上不可能
+（7×44 = 308px 已超過可用寬度），所以改為保證高度 44px，並在小螢幕收緊留白把寬度撐到 37px
+（375px 以上為 45×44）。
+
+高風險動作有意加上摩擦：設定或更改共用密碼要勾選一個確認，因為密碼是唯一的金鑰，
+而且**更改密碼不會重新加密舊紀錄**——換了之後舊的內容就需要原本的密碼才打得開，
+所以更改時會建議先下載一份備份。
 
 ## 測試
 

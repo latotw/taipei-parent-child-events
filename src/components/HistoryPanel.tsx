@@ -173,7 +173,7 @@ export default function HistoryPanel({
     <div className="space-y-4">
       <section
         aria-label="月曆"
-        className="rounded-3xl border border-line bg-card p-4 shadow-soft"
+        className="rounded-3xl border border-line bg-card p-3 shadow-soft sm:p-4"
       >
         <div className="mb-3 flex items-baseline justify-between gap-2">
           <h2 className="text-base font-medium text-ink">回顧月曆</h2>

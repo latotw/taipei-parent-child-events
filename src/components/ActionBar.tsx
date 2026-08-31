@@ -37,7 +37,7 @@ export default function ActionBar({
   const working = busy !== null;
 
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 mt-2 border-t border-line bg-paper/85 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
+    <div className="sticky bottom-0 z-10 -mx-3 mt-2 border-t border-line bg-paper/85 px-3 pt-3 sm:-mx-4 sm:px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
       <div className="mx-auto max-w-md">
         <p
           aria-live="polite"

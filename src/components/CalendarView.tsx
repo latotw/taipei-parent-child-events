@@ -20,6 +20,11 @@ type Props = {
 const ARROW =
   "flex size-9 shrink-0 items-center justify-center rounded-full border border-line bg-card text-ink-soft transition-colors hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-card";
 
+/**
+ * 觸控目標：320px 寬的螢幕上，七欄要各有 44px 寬在幾何上不可能
+ * （7×44 = 308px 已經超過扣掉留白後的可用寬度），所以改為保證「高度」
+ * 至少 44px（min-h-11），並在小螢幕收緊留白把寬度盡量撐大。
+ */
 function cellClass(params: {
   inMonth: boolean;
   isToday: boolean;
@@ -28,7 +33,7 @@ function cellClass(params: {
   hasEntry: boolean;
 }): string {
   const base =
-    "relative flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-2xl text-sm transition-colors";
+    "relative flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-2xl py-1.5 text-sm transition-colors sm:aspect-square";
 
   if (params.isSelected) return `${base} bg-clay font-semibold text-white`;
   if (params.isFuture) return `${base} text-ink-muted/40`;
@@ -103,7 +108,7 @@ export default function CalendarView({
         </button>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 gap-1">
+      <div className="mt-3 grid grid-cols-7 gap-0.5 sm:gap-1">
         {WEEKDAY_LABELS.map((label) => (
           <div
             key={label}

@@ -14,7 +14,7 @@ import {
 } from "@/lib/crypto";
 
 const INPUT_CLASS =
-  "w-full rounded-2xl border border-line bg-paper px-4 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20";
+  "w-full rounded-2xl border border-line bg-paper px-4 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-muted focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20";
 
 function LockIcon({ open }: { open: boolean }) {
   return (
@@ -50,6 +50,8 @@ export default function PassphraseCard() {
   const { workspace, registerProbe } = useWorkspace();
 
   const [editing, setEditing] = useState(false);
+  // 高風險動作刻意加一道摩擦：沒有勾選就不讓設定
+  const [acknowledged, setAcknowledged] = useState(false);
   const [checking, setChecking] = useState(false);
   const [mismatch, setMismatch] = useState(false);
   const [first, setFirst] = useState("");
@@ -63,6 +65,7 @@ export default function PassphraseCard() {
     setFirst("");
     setSecond("");
     setReveal(false);
+    setAcknowledged(false);
     setError(null);
   };
 
@@ -77,6 +80,10 @@ export default function PassphraseCard() {
     }
     if (first !== second) {
       setError("兩次輸入的密碼不一致。");
+      return;
+    }
+    if (!acknowledged) {
+      setError("請先勾選下方的確認，再設定密碼。");
       return;
     }
 
@@ -192,6 +199,45 @@ export default function PassphraseCard() {
             顯示密碼
           </label>
 
+          <div className="rounded-2xl bg-clay-soft p-3">
+            {hasPassphrase ? (
+              <>
+                <p className="text-xs font-medium text-clay-deep">
+                  更改密碼不會重新加密舊紀錄
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-clay-deep">
+                  已經存在的紀錄仍然是用舊密碼加密的，換成新密碼後就看不到它們了。
+                  建議先到「回顧」分頁下載一份備份。
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-medium text-clay-deep">
+                  這組密碼是唯一的鑰匙
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-clay-deep">
+                  我們不會保存它，也沒有「忘記密碼」可以按。
+                  忘記了，已經加密的紀錄就永遠打不開。
+                </p>
+              </>
+            )}
+
+            <label className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-clay-deep">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(event) => {
+                  setAcknowledged(event.target.checked);
+                  setError(null);
+                }}
+                className="mt-0.5 size-4 shrink-0 accent-clay"
+              />
+              {hasPassphrase
+                ? "我知道舊的紀錄需要原本的密碼才能打開"
+                : "我知道忘記密碼就無法還原已加密的內容"}
+            </label>
+          </div>
+
           {error && (
             <p role="alert" className="text-xs text-clay-deep">
               {error}
@@ -266,8 +312,8 @@ export default function PassphraseCard() {
       )}
 
       <p className="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-muted">
-        金鑰推導：{CRYPTO_INFO.kdf}。密碼只留在這個分頁的記憶體中，不會被儲存或送出；
-        重新整理後要再輸入一次，忘記密碼將無法還原已加密的內容。
+        金鑰推導：{CRYPTO_INFO.kdf}。密碼只留在這個分頁的記憶體中，不會被儲存或送出，
+        重新整理後要再輸入一次。
       </p>
     </section>
   );

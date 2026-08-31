@@ -8,11 +8,19 @@
   --color-line: #ece0d6;
   --color-ink: #3b322c;
   --color-ink-soft: #6f6259;
-  --color-ink-muted: #9c8d81;
-  --color-clay: #c97b5a;
-  --color-clay-deep: #b0664a;
+  /*
+   * 下面幾個顏色的深度是照 WCAG AA（一般文字 4.5:1）挑的，不是憑感覺：
+   *   ink-muted on paper 5.00 / on paper-deep 4.53（11px 的說明文字大量用它）
+   *   白字 on clay 4.76（主要按鈕、分頁、月曆選取格）
+   *   clay-deep on card 5.63 / on clay-soft 4.71（錯誤訊息）
+   *   leaf on card 5.65 / on leaf-soft 4.87（成功訊息）
+   * 改動時請一併重算，別只挑好看的。
+   */
+  --color-ink-muted: #78695e;
+  --color-clay: #af5c39;
+  --color-clay-deep: #96573f;
   --color-clay-soft: #f7e8e0;
-  --color-leaf: #7f9a6f;
+  --color-leaf: #596d4c;
   --color-leaf-soft: #eaf0e5;
 
   --font-sans:

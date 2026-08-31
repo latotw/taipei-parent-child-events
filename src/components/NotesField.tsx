@@ -34,7 +34,7 @@ export default function NotesField({ value, maxLength, onChange }: Props) {
         maxLength={maxLength}
         onChange={(event) => onChange(event.target.value)}
         placeholder="今天的天氣、一段對話、一個念頭…"
-        className="mt-3 min-h-40 w-full resize-y rounded-2xl border border-line bg-paper px-4 py-3 text-[15px] leading-7 text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
+        className="mt-3 min-h-40 w-full resize-y rounded-2xl border border-line bg-paper px-4 py-3 text-[15px] leading-7 text-ink outline-none transition placeholder:text-ink-muted focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
       />
     </section>
   );

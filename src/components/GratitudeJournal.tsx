@@ -74,6 +74,12 @@ export default function GratitudeJournal() {
   // 每次成功上傳就 +1，讓下面的共享列表重新讀一次
   const [syncedAt, setSyncedAt] = useState(0);
   const [tab, setTab] = useState<TabId>("write");
+
+  /** 換分頁等於換一個畫面，捲動位置要回到最上面，不然會落在別頁的中段。 */
+  const changeTab = (next: TabId) => {
+    setTab(next);
+    window.scrollTo({ top: 0 });
+  };
   const { passphrase, hasPassphrase } = usePassphrase();
   const { workspace } = useWorkspace();
 
@@ -291,7 +297,7 @@ export default function GratitudeJournal() {
   const canSubmit = filledCount > 0;
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 pt-6 pb-4">
+    <div className="mx-auto w-full max-w-md px-3 pt-6 pb-4 sm:px-4">
       <header className="mb-4">
         <p className="text-sm text-ink-muted">{greeting}，</p>
         <h1 className="mt-1 text-2xl leading-snug font-semibold text-ink">
@@ -301,7 +307,7 @@ export default function GratitudeJournal() {
 
       <TabBar
         active={tab}
-        onChange={setTab}
+        onChange={changeTab}
         tabs={[
           { id: "write", label: "寫日記" },
           // 這裡不放筆數：本機 state 重新整理就歸零，會比實際紀錄少。
@@ -381,7 +387,7 @@ export default function GratitudeJournal() {
           active={tab === "history"}
           onJumpToDate={(nextKey) => {
             handleDateChange(nextKey);
-            setTab("write");
+            changeTab("write");
           }}
         />
       </div>

@@ -18,7 +18,7 @@ type Props = {
 export default function TabBar({ tabs, active, onChange }: Props) {
   return (
     // 貼在頂端，滑到頁面深處也能換頁
-    <div className="sticky top-0 z-20 -mx-4 mb-4 bg-paper/85 px-4 pt-2 pb-3 backdrop-blur">
+    <div className="sticky top-0 z-20 -mx-3 mb-4 bg-paper/85 px-3 pt-2 pb-3 backdrop-blur sm:-mx-4 sm:px-4">
       <div
         role="tablist"
         aria-label="主要分頁"

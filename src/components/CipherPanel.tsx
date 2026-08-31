@@ -120,7 +120,7 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
               }}
               spellCheck={false}
               placeholder="GJ1.600000.…（也可以貼上別處產生的加密字串來解密）"
-              className="mt-1 min-h-24 w-full resize-y rounded-2xl border border-line bg-paper px-3 py-2.5 font-mono text-[11px] leading-relaxed break-all text-ink-soft outline-none transition placeholder:text-ink-muted/70 focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
+              className="mt-1 min-h-24 w-full resize-y rounded-2xl border border-line bg-paper px-3 py-2.5 font-mono text-[11px] leading-relaxed break-all text-ink-soft outline-none transition placeholder:text-ink-muted focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
             />
             <div className="mt-2 flex items-center justify-between gap-3">
               <button
@@ -160,7 +160,7 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
                     void handleDecrypt();
                   }
                 }}
-                className="min-w-0 flex-1 rounded-2xl border border-line bg-paper px-4 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
+                className="min-w-0 flex-1 rounded-2xl border border-line bg-paper px-4 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-muted focus:border-clay focus:bg-card focus:ring-2 focus:ring-clay/20"
               />
               <button
                 type="button"
