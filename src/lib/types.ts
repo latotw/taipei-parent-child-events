@@ -28,6 +28,15 @@ export type DayEntry = {
 /** 以 YYYY-MM-DD 當 key，存放每一天的日記。 */
 export type JournalByDate = Record<string, DayEntry>;
 
+/** 這台裝置上某一天的加密結果，匯出與歷史回顧都會用到。 */
+export type LocalCipher = {
+  /** YYYY-MM-DD */
+  date: string;
+  ciphertext: string;
+  /** 加密時間，ISO 字串 */
+  savedAt: string;
+};
+
 /**
  * 真正被加密的資料結構（明文 payload）。
  * 刻意不帶 React 用的 id，解密後就是乾淨的日記內容。

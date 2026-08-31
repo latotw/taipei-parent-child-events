@@ -305,6 +305,53 @@ export async function pullEntries(
   return (data ?? []).map((row) => toRemoteEntry(row, myUserId));
 }
 
+/**
+ * 月曆用：某段日期區間內「哪幾天有誰寫過」。
+ * 刻意不撈 ciphertext——標記日期不需要內容，等點進某一天再抓。
+ */
+export async function pullEntryDates(
+  workspaceId: string,
+  fromDate: string,
+  toDate: string,
+): Promise<{ entryDate: string; authorLabel: string; isMine: boolean }[]> {
+  const supabase = getSupabaseClient();
+  const myUserId = await ensureSession();
+
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .select("entry_date, author_id, author_label")
+    .eq("workspace_id", workspaceId)
+    .gte("entry_date", fromDate)
+    .lte("entry_date", toDate)
+    .order("entry_date", { ascending: true })
+    .returns<Pick<EntryRow, "entry_date" | "author_id" | "author_label">[]>();
+  if (error) throw toSyncError(error);
+
+  return (data ?? []).map((row) => ({
+    entryDate: row.entry_date,
+    authorLabel: row.author_label,
+    isMine: row.author_id === myUserId,
+  }));
+}
+
+/** 匯出用：整個 workspace 的所有加密日記。 */
+export async function pullAllEntries(
+  workspaceId: string,
+): Promise<RemoteEntry[]> {
+  const supabase = getSupabaseClient();
+  const myUserId = await ensureSession();
+
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .select(ENTRY_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .order("entry_date", { ascending: false })
+    .returns<EntryRow[]>();
+  if (error) throw toSyncError(error);
+
+  return (data ?? []).map((row) => toRemoteEntry(row, myUserId));
+}
+
 /** 刪掉自己在某一天的日記。 */
 export async function deleteEntry(
   workspaceId: string,

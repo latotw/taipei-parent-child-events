@@ -20,9 +20,11 @@ npm run dev      # http://localhost:3000
 npm run build    # 產生 production build（同時做 TypeScript 型別檢查）
 npm run start    # 啟動 production server
 npm run lint     # ESLint
-npm test             # 加密模組 + 同步層的測試（Node 內建 test runner）
-npm run test:crypto  # 只跑加密模組
-npm run test:sync    # 只跑同步層的純函式與錯誤對照
+npm test               # 全部單元測試（Node 內建 test runner）
+npm run test:crypto    # 加密模組
+npm run test:sync      # 同步層的純函式與錯誤對照
+npm run test:calendar  # 月曆格子計算
+npm run test:backup    # 匯出格式
 ```
 
 要開啟兩人同步，把 `.env.example` 複製成 `.env.local` 並填入 Supabase 的兩個值，
@@ -41,6 +43,8 @@ npm run test:sync    # 只跑同步層的純函式與錯誤對照
 | 加密內容與解密驗證 | 可收合面板：顯示這一天的加密字串（可複製、也可貼上外部字串），輸入密碼即可解密還原並「填回表單」。 |
 | 兩人共享 | 建立 Workspace 取得邀請碼，或用邀請碼加入；顯示成員、邀請碼狀態、離開 Workspace。 |
 | 這一天的共享內容 | 從 Workspace 讀回當天兩人的加密字串，在本機解密後顯示；也可以把某一則填回表單。 |
+| 歷史回顧 | 可收合面板：月曆標出哪幾天有紀錄（兩人都寫就兩個點），點日期即用共用密碼解密呈現，可「切到這一天」繼續寫。 |
+| 資料匯出 | 一鍵下載完整紀錄的 JSON——加密備份或解密後的明文備份。 |
 
 其他細節：
 
@@ -69,6 +73,9 @@ src/
 │   ├── WorkspaceProvider.tsx # Workspace 狀態（自動連線、建立、加入、離開）
 │   ├── WorkspaceCard.tsx    # 夫妻配對與邀請碼介面
 │   ├── WorkspaceFeed.tsx    # 當天兩人的加密資料，讀回後在本機解密
+│   ├── HistoryPanel.tsx     # 歷史回顧：月曆 + 該日解密內容 + 匯出
+│   ├── CalendarView.tsx     # 月曆格子（純呈現）
+│   ├── BackupPanel.tsx      # JSON 匯出（加密／明文）
 │   ├── ActionBar.tsx        # 暫存 / 送出（都會先加密）
 │   └── StatusBadge.tsx      # 當日狀態標籤
 └── lib/
@@ -181,6 +188,38 @@ Supabase ──pullEntries()──▶ envelope ──decryptJournal()──▶ �
 上傳失敗也只是提示「已在本機加密，但同步失敗」，內容不會消失。
 匿名登入的 JWT 會存在 localStorage（那是身分，不是金鑰）；共用密碼只在記憶體裡。
 
+## 歷史回顧與資料匯出
+
+### 月曆
+
+`lib/calendar.ts` 只負責格子的算術（週日對齊、跨月跨年、閏年、補滿鄰月），
+是純函式所以測得起來；`CalendarView` 只負責畫。標記來自兩個地方的聯集：
+
+- **Workspace**：`pullEntryDates()` 只查當月的 `entry_date / author_label`，不撈 ciphertext——
+  標記日期不需要內容。
+- **本機**：這個分頁裡已經加密過的日子（離線模式下這就是全部）。
+
+一天有幾則就畫幾個點（最多兩個），今天有描邊，未來的日期不能點。
+
+### 點日期 → 解密
+
+點下去才抓那一天的 ciphertext 並用共用密碼解密（每則都要跑一次 PBKDF2，
+所以刻意不預先全部解開）。解不出來時會說明原因——沒輸入密碼，或當時用的是另一組密碼——
+而不是顯示空白。
+
+### 資料匯出（JSON Backup）
+
+兩種格式，都在客戶端組出來後直接下載：
+
+| 格式 | 內容 | 適合 |
+| --- | --- | --- |
+| 加密備份 | 原始 envelope，附上格式說明 | 丟到任何地方存放；還原時需要當時的共用密碼 |
+| 明文備份 | 解密後的三件事與 Notes | 真正拿回自己的資料；**檔案沒有任何保護** |
+
+- 檔名為 `gratitude-journal-YYYY-MM-DD-encrypted.json` / `-plain.json`，內含 `format` 與 `version` 便於日後解析。
+- 本機與 Workspace 的紀錄會合併；同一天同一人兩邊都有時保留時間較新的那筆（`lib/backup.ts` 的 `collectEntries`）。
+- 明文匯出若有紀錄解不開（例如密碼換過），那幾筆會以加密形式放進 `undecryptable`，並在畫面上說有幾筆——不會靜靜消失。
+
 ## 設計方向
 
 暖色紙感的單一亮色主題，色票定義在 `globals.css` 的 `@theme` 中（Tailwind v4）：
@@ -199,6 +238,8 @@ Supabase ──pullEntries()──▶ envelope ──decryptJournal()──▶ �
 | --- | --- |
 | 加密模組（roundtrip、錯誤代碼、竄改偵測） | `npm run test:crypto` |
 | 同步層純函式與錯誤對照 | `npm run test:sync` |
+| 月曆格子計算（跨月、跨年、閏年、週日對齊） | `npm run test:calendar` |
+| 匯出格式（合併去重、檔名、解不開的處理） | `npm run test:backup` |
 | 型別與建置 | `npm run build` |
 | RLS / 邀請碼 / trigger / CHECK | 對一個**本機**測試用 Postgres 依序執行 `supabase/tests/00-emulate-supabase.sql`、`supabase/schema.sql`、`supabase/tests/01-rls.test.sql`（測試檔含 `truncate`，不要對正式專案執行） |
 

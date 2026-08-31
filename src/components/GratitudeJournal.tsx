@@ -11,6 +11,7 @@ import {
 import ActionBar from "@/components/ActionBar";
 import CipherPanel from "@/components/CipherPanel";
 import DateNavigator from "@/components/DateNavigator";
+import HistoryPanel from "@/components/HistoryPanel";
 import NotesField from "@/components/NotesField";
 import PassphraseCard from "@/components/PassphraseCard";
 import { usePassphrase } from "@/components/PassphraseProvider";
@@ -27,6 +28,7 @@ import type {
   DayEntry,
   JournalByDate,
   JournalPayload,
+  LocalCipher,
 } from "@/lib/types";
 
 const DEFAULT_ITEM_COUNT = 3;
@@ -199,6 +201,9 @@ export default function GratitudeJournal() {
         };
       });
 
+      // 本機的加密紀錄也變了，讓月曆與匯出重新取值。
+      setSyncedAt((value) => value + 1);
+
       // 加密完成之後才輪到網路：離開這台裝置的只有 cipher.text。
       if (workspace) {
         try {
@@ -207,7 +212,6 @@ export default function GratitudeJournal() {
             entryDate: dateKey,
             ciphertext: cipherText,
           });
-          setSyncedAt((value) => value + 1);
           setFeedback({
             tone: mode === "draft" ? "info" : "success",
             text:
@@ -262,6 +266,19 @@ export default function GratitudeJournal() {
     [entry],
   );
 
+  /** 這台裝置上所有已加密的日子，給歷史回顧與匯出用。 */
+  const localCiphers = useMemo<LocalCipher[]>(
+    () =>
+      Object.entries(journal)
+        .flatMap(([date, day]) =>
+          day.cipher
+            ? [{ date, ciphertext: day.cipher.text, savedAt: day.cipher.savedAt }]
+            : [],
+        )
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [journal],
+  );
+
   const hasContent = filledCount > 0 || entry.notes.trim() !== "";
   const canSubmit = filledCount > 0;
 
@@ -313,6 +330,12 @@ export default function GratitudeJournal() {
           dateKey={dateKey}
           refreshToken={syncedAt}
           onRestore={handleRestore}
+        />
+
+        <HistoryPanel
+          localCiphers={localCiphers}
+          refreshToken={syncedAt}
+          onJumpToDate={handleDateChange}
         />
       </div>
 

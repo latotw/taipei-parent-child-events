@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:crypto": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/crypto.test.mts",
-    "test:sync": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/supabase/workspace.test.mts",
-    "test": "npm run test:crypto && npm run test:sync"
+    "test:crypto": "node --import ./scripts/register-alias.mjs --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/crypto.test.mts",
+    "test:sync": "node --import ./scripts/register-alias.mjs --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/supabase/workspace.test.mts",
+    "test": "node --import ./scripts/register-alias.mjs --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test \"src/**/*.test.mts\"",
+    "test:calendar": "node --import ./scripts/register-alias.mjs --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/calendar.test.mts",
+    "test:backup": "node --import ./scripts/register-alias.mjs --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=ExperimentalWarning --test src/lib/backup.test.mts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
