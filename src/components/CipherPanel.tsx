@@ -23,7 +23,8 @@ function formatTime(iso: string): string {
 export default function CipherPanel({ cipher, onRestore }: Props) {
   const { passphrase, hasPassphrase } = usePassphrase();
 
-  const [open, setOpen] = useState(Boolean(cipher));
+  // 預設收起。這是進階工具，不該每次加密完就自己展開來搶注意力。
+  const [open, setOpen] = useState(false);
   const [envelope, setEnvelope] = useState(cipher?.text ?? "");
   const [attempt, setAttempt] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,7 +57,7 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
 
   return (
     <section
-      aria-label="加密輸出與解密驗證"
+      aria-label="加密字串與單筆還原"
       className="rounded-3xl border border-line bg-card shadow-soft"
     >
       <button
@@ -67,14 +68,14 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
       >
         <span>
           <span className="text-base font-medium text-ink">
-            加密內容與解密驗證
+            加密字串與單筆還原
           </span>
           <span className="mt-1 block text-xs text-ink-muted">
             {cipher
               ? `${formatTime(cipher.savedAt)} 加密 · ${cipher.text.length} 字元${
                   cipher.stale ? " · 之後又改過內容" : ""
                 }`
-              : "尚未加密，先按下方的暫存或送出"}
+              : "貼上備份裡的加密字串，用密碼解回內容"}
           </span>
         </span>
         <svg
@@ -95,6 +96,11 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
 
       {open && (
         <div className="space-y-4 border-t border-line p-4">
+          <p className="text-xs leading-relaxed text-ink-muted">
+            一般使用不需要打開這裡。它的用途有兩個：確認內容真的被加密了，
+            以及把備份檔（或另一台裝置）裡的單一加密字串解回內容。
+          </p>
+
           {cipher?.stale && (
             <p className="rounded-2xl bg-clay-soft px-3 py-2 text-xs leading-relaxed text-clay-deep">
               表單內容在這次加密之後又改過了，請重新暫存或送出以取得最新的加密字串。
@@ -141,7 +147,7 @@ export default function CipherPanel({ cipher, onRestore }: Props) {
 
           <div className="border-t border-line pt-4">
             <label className="text-xs text-ink-soft" htmlFor="decrypt-pass">
-              用密碼解密驗證
+              用密碼解回內容
             </label>
             <div className="mt-1 flex gap-2">
               <input

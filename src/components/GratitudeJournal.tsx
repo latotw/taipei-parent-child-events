@@ -422,12 +422,22 @@ export default function GratitudeJournal() {
 
         <WorkspaceCard />
 
-        <CipherPanel
-          // 換日期或產生新的加密字串時重設面板；單純編輯表單不會（savedAt 不變）。
-          key={`${dateKey}:${entry.cipher?.savedAt ?? "none"}`}
-          cipher={entry.cipher}
-          onRestore={handleRestore}
-        />
+        {/* 進階：一般使用不會用到，所以獨立分組並排在最後 */}
+        <section aria-labelledby="advanced-heading" className="pt-2">
+          <h2
+            id="advanced-heading"
+            className="mb-2 px-1 text-[11px] font-medium tracking-widest text-ink-muted"
+          >
+            進階
+          </h2>
+
+          <CipherPanel
+            // 換日期或產生新的加密字串時重設面板；單純編輯表單不會（savedAt 不變）。
+            key={`${dateKey}:${entry.cipher?.savedAt ?? "none"}`}
+            cipher={entry.cipher}
+            onRestore={handleRestore}
+          />
+        </section>
       </div>
     </div>
   );
