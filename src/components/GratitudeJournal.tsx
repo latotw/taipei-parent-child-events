@@ -9,11 +9,20 @@ import {
 } from "react";
 
 import ActionBar from "@/components/ActionBar";
+import CipherPanel from "@/components/CipherPanel";
 import DateNavigator from "@/components/DateNavigator";
 import NotesField from "@/components/NotesField";
+import PassphraseCard from "@/components/PassphraseCard";
+import { usePassphrase } from "@/components/PassphraseProvider";
 import ThreeThingsList from "@/components/ThreeThingsList";
+import { describeCryptoError, encryptJournal } from "@/lib/crypto";
 import { formatFullDate, greetingFor, todayKey } from "@/lib/date";
-import type { DayEntry, JournalByDate } from "@/lib/types";
+import type {
+  CipherRecord,
+  DayEntry,
+  JournalByDate,
+  JournalPayload,
+} from "@/lib/types";
 
 const DEFAULT_ITEM_COUNT = 3;
 const MAX_ITEMS = 5;
@@ -30,13 +39,14 @@ function createEmptyEntry(): DayEntry {
     })),
     notes: "",
     status: "empty",
+    cipher: null,
   };
 }
 
 /** 理論上不會用到（切換日期時就會建立當天的資料），純粹讓型別安全。 */
 const EMPTY_FALLBACK = createEmptyEntry();
 
-type Feedback = { tone: "info" | "success"; text: string };
+type Feedback = { tone: "info" | "success" | "error"; text: string };
 
 /** 這個元件只在瀏覽器端渲染（見 JournalLoader），所以可以直接讀本地時間。 */
 export default function GratitudeJournal() {
@@ -46,6 +56,8 @@ export default function GratitudeJournal() {
   }));
   const [greeting] = useState(() => greetingFor(new Date()));
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [busy, setBusy] = useState<"draft" | "submitted" | null>(null);
+  const { passphrase, hasPassphrase } = usePassphrase();
 
   // 提示訊息幾秒後自動淡出。
   useEffect(() => {
@@ -74,9 +86,18 @@ export default function GratitudeJournal() {
     );
   };
 
-  /** 只要內容被改動過，就從「已送出」退回「已暫存」，提醒使用者記得再送出。 */
-  const markEdited = (status: DayEntry["status"]): DayEntry["status"] =>
-    status === "submitted" ? "draft" : status;
+  /**
+   * 內容改了之後，先前算出的加密字串就對不上了。標記為過期（而不是直接刪掉），
+   * 這樣使用者還能複製舊字串，畫面上也會提示要重新加密。
+   */
+  const staleCipher = (current: DayEntry): CipherRecord | null =>
+    current.cipher ? { ...current.cipher, stale: true } : null;
+
+  /** 內容一被改動：狀態從「已送出」退回「已暫存」，並把加密字串標記為過期。 */
+  const touched = (current: DayEntry): Pick<DayEntry, "status" | "cipher"> => ({
+    status: current.status === "submitted" ? "draft" : current.status,
+    cipher: staleCipher(current),
+  });
 
   const handleItemChange = (id: string, text: string) => {
     updateEntry((current) => ({
@@ -84,7 +105,7 @@ export default function GratitudeJournal() {
       items: current.items.map((item) =>
         item.id === id ? { ...item, text } : item,
       ),
-      status: markEdited(current.status),
+      ...touched(current),
     }));
   };
 
@@ -95,7 +116,7 @@ export default function GratitudeJournal() {
         : {
             ...current,
             items: [...current.items, { id: createId(), text: "" }],
-            status: markEdited(current.status),
+            ...touched(current),
           },
     );
   };
@@ -107,7 +128,7 @@ export default function GratitudeJournal() {
         : {
             ...current,
             items: current.items.filter((item) => item.id !== id),
-            status: markEdited(current.status),
+            ...touched(current),
           },
     );
   };
@@ -116,30 +137,90 @@ export default function GratitudeJournal() {
     updateEntry((current) => ({
       ...current,
       notes,
-      status: markEdited(current.status),
+      ...touched(current),
     }));
   };
 
-  const handleSaveDraft = () => {
-    updateEntry((current) => ({ ...current, status: "draft" }));
-    setFeedback({ tone: "info", text: "已暫存，隨時回來繼續寫。" });
+  /** 把表單目前的內容整理成要加密的明文 payload。 */
+  const buildPayload = (source: DayEntry): JournalPayload => ({
+    date: dateKey,
+    items: source.items
+      .map((item) => item.text.trim())
+      .filter((text) => text !== ""),
+    notes: source.notes.trim(),
+    savedAt: new Date().toISOString(),
+  });
+
+  /**
+   * 暫存與送出共用的流程：先在客戶端加密，成功之後才更新狀態。
+   * 加密失敗（例如沒設密碼、沒有內容）就什麼都不動，只顯示提示。
+   */
+  const persist = async (mode: "draft" | "submitted") => {
+    if (busy) return;
+
+    if (!passphrase) {
+      setFeedback({
+        tone: "error",
+        text: "請先在上方設定共用解密密碼，內容才能加密後再離開這台裝置。",
+      });
+      return;
+    }
+
+    setBusy(mode);
+    setFeedback(null);
+    try {
+      const cipherText = await encryptJournal(buildPayload(entry), passphrase);
+      const cipher: CipherRecord = {
+        text: cipherText,
+        savedAt: new Date().toISOString(),
+        stale: false,
+      };
+
+      // 真的要接後端時，這裡送出去的就只有 cipher.text，明文不離開瀏覽器。
+      updateEntry((current) => {
+        if (mode === "draft") return { ...current, status: "draft", cipher };
+
+        // 送出時順手清掉全空的欄位，至少留一格。
+        const kept = current.items.filter((item) => item.text.trim() !== "");
+        return {
+          ...current,
+          items: kept.length > 0 ? kept : current.items.slice(0, 1),
+          notes: current.notes.trim(),
+          status: "submitted",
+          cipher,
+        };
+      });
+
+      setFeedback(
+        mode === "draft"
+          ? { tone: "info", text: "已加密並暫存，隨時回來繼續寫。" }
+          : { tone: "success", text: "已加密送出，謝謝你 🌿" },
+      );
+    } catch (caught) {
+      setFeedback({ tone: "error", text: describeCryptoError(caught) });
+    } finally {
+      setBusy(null);
+    }
   };
+
+  const handleSaveDraft = () => void persist("draft");
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    void persist("submitted");
+  };
 
-    // 送出時順手清掉全空的欄位，至少留一格。
-    updateEntry((current) => {
-      const kept = current.items.filter((item) => item.text.trim() !== "");
-      return {
-        ...current,
-        items: kept.length > 0 ? kept : current.items.slice(0, 1),
-        notes: current.notes.trim(),
-        status: "submitted",
-      };
-    });
-    setFeedback({ tone: "success", text: "今天的感恩日記已送出，謝謝你 🌿" });
+  /** 解密面板按「填回表單」：用還原出來的內容覆蓋目前的表單。 */
+  const handleRestore = (payload: JournalPayload) => {
+    const items = payload.items.length > 0 ? payload.items : [""];
+    updateEntry((current) => ({
+      ...current,
+      items: items.map((text) => ({ id: createId(), text })),
+      notes: payload.notes,
+      status: "draft",
+      cipher: staleCipher(current),
+    }));
+    setFeedback({ tone: "info", text: "已把解密的內容填回表單。" });
   };
 
   const filledCount = useMemo(
@@ -169,6 +250,8 @@ export default function GratitudeJournal() {
           onChange={handleDateChange}
         />
 
+        <PassphraseCard />
+
         <ThreeThingsList
           items={entry.items}
           maxItems={MAX_ITEMS}
@@ -182,15 +265,22 @@ export default function GratitudeJournal() {
           maxLength={NOTES_MAX_LENGTH}
           onChange={handleNotesChange}
         />
+
+        <CipherPanel
+          // 換日期或產生新的加密字串時重設面板；單純編輯表單不會（savedAt 不變）。
+          key={`${dateKey}:${entry.cipher?.savedAt ?? "none"}`}
+          cipher={entry.cipher}
+          onRestore={handleRestore}
+        />
       </div>
 
       <p
         aria-live="polite"
         className={`mt-4 min-h-6 text-center text-xs transition-opacity ${
           feedback
-            ? feedback.tone === "success"
-              ? "text-leaf opacity-100"
-              : "text-clay-deep opacity-100"
+            ? `opacity-100 ${
+                feedback.tone === "success" ? "text-leaf" : "text-clay-deep"
+              }`
             : "opacity-0"
         }`}
       >
@@ -198,13 +288,16 @@ export default function GratitudeJournal() {
       </p>
 
       <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-muted">
-        {formatFullDate(dateKey)}的內容只存在這個頁面的記憶中，重新整理後會重新開始。
+        {formatFullDate(dateKey)}的明文只存在這個頁面的記憶中，重新整理後會重新開始；
+        只有加密字串適合離開這台裝置。
       </p>
 
       <ActionBar
         canSave={hasContent}
         canSubmit={canSubmit}
         isSubmitted={entry.status === "submitted"}
+        hasPassphrase={hasPassphrase}
+        busy={busy}
         onSaveDraft={handleSaveDraft}
       />
 

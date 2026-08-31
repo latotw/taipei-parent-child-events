@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 
 import JournalSkeleton from "@/components/JournalSkeleton";
+import { PassphraseProvider } from "@/components/PassphraseProvider";
 
 /**
  * 日記畫面的內容取決於「使用者所在時區的今天」與當下時間，
@@ -14,5 +15,9 @@ const GratitudeJournal = dynamic(
 );
 
 export default function JournalLoader() {
-  return <GratitudeJournal />;
+  return (
+    <PassphraseProvider>
+      <GratitudeJournal />
+    </PassphraseProvider>
+  );
 }
