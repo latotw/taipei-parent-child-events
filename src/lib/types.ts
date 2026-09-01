@@ -15,6 +15,11 @@ export type CipherRecord = {
   savedAt: string;
   /** 表單在這次加密之後又被改過，字串已對不上目前內容 */
   stale: boolean;
+  /**
+   * 這份加密字串已經送到 Workspace。
+   * 離線模式、或上傳失敗時是 false——畫面上就不該說「已同步」。
+   */
+  synced: boolean;
 };
 
 /** 某一天的完整日記內容。 */

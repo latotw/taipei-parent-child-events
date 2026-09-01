@@ -6,9 +6,14 @@ export type ActionMessage = {
 };
 
 type Props = {
+  /**
+   * edit：還在寫，暫存與送出並排。
+   * done：這一天已經送出了，只留一顆「修改這一天」——寫完就該收工，
+   * 不要再擺兩顆按鈕讓人猶豫「是不是還得再按一次」。
+   */
+  mode: "edit" | "done";
   canSave: boolean;
   canSubmit: boolean;
-  isSubmitted: boolean;
   hasPassphrase: boolean;
   busy: "draft" | "submitted" | null;
   /**
@@ -17,6 +22,7 @@ type Props = {
    */
   message: ActionMessage | null;
   onSaveDraft: () => void;
+  onEdit: () => void;
 };
 
 const TONE_CLASS = {
@@ -26,15 +32,22 @@ const TONE_CLASS = {
 } as const;
 
 export default function ActionBar({
+  mode,
   canSave,
   canSubmit,
-  isSubmitted,
   hasPassphrase,
   busy,
   message,
   onSaveDraft,
+  onEdit,
 }: Props) {
   const working = busy !== null;
+
+  const hint = !hasPassphrase
+    ? "尚未設定共用解密密碼——到「設定」分頁設定後才能加密"
+    : mode === "done"
+      ? "這一天已經加密收好了，要補寫再按「修改這一天」"
+      : "內容會先在這台裝置上以 AES-GCM 加密，再暫存或送出";
 
   return (
     <div className="sticky bottom-0 z-10 -mx-3 mt-2 border-t border-line bg-paper/85 px-3 pt-3 sm:-mx-4 sm:px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur">
@@ -50,33 +63,36 @@ export default function ActionBar({
                 : "text-clay-deep"
           }`}
         >
-          {message?.text ??
-            (hasPassphrase
-              ? "內容會先在這台裝置上以 AES-GCM 加密，再暫存或送出"
-              : "尚未設定共用解密密碼——到「設定」分頁設定後才能加密")}
+          {message?.text ?? hint}
         </p>
 
-        <div className="flex gap-3">
+        {mode === "done" ? (
           <button
             type="button"
-            onClick={onSaveDraft}
-            disabled={!canSave || working}
-            className="flex-1 rounded-2xl border border-line bg-card px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-card"
+            onClick={onEdit}
+            className="w-full rounded-2xl border border-line bg-card px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-deep"
           >
-            {busy === "draft" ? "加密中…" : "暫存"}
+            修改這一天
           </button>
-          <button
-            type="submit"
-            disabled={!canSubmit || working}
-            className="flex-[1.6] rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:bg-clay/35 disabled:shadow-none"
-          >
-            {busy === "submitted"
-              ? "加密中…"
-              : isSubmitted
-                ? "已送出 · 再送一次"
-                : "加密並送出"}
-          </button>
-        </div>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onSaveDraft}
+              disabled={!canSave || working}
+              className="flex-1 rounded-2xl border border-line bg-card px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:bg-paper-deep disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-card"
+            >
+              {busy === "draft" ? "加密中…" : "暫存"}
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit || working}
+              className="flex-[1.6] rounded-2xl bg-clay px-4 py-3 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:bg-clay/35 disabled:shadow-none"
+            >
+              {busy === "submitted" ? "加密中…" : "加密並送出"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

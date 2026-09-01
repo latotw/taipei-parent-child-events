@@ -11,6 +11,7 @@ import {
 import ActionBar from "@/components/ActionBar";
 import CipherPanel from "@/components/CipherPanel";
 import DateNavigator from "@/components/DateNavigator";
+import DayCompleteCard from "@/components/DayCompleteCard";
 import HistoryPanel from "@/components/HistoryPanel";
 import NotesField from "@/components/NotesField";
 import PassphraseCard from "@/components/PassphraseCard";
@@ -74,6 +75,11 @@ export default function GratitudeJournal() {
   // 每次成功上傳就 +1，讓下面的共享列表重新讀一次
   const [syncedAt, setSyncedAt] = useState(0);
   const [tab, setTab] = useState<TabId>("write");
+  /**
+   * 被按了「修改這一天」的日期。送出後畫面會收成完成卡片，
+   * 只有這裡記著的那一天才把編輯欄位放回來。
+   */
+  const [editing, setEditing] = useState<string | null>(null);
 
   /** 換分頁等於換一個畫面，捲動位置要回到最上面，不然會落在別頁的中段。 */
   const changeTab = (next: TabId) => {
@@ -198,6 +204,7 @@ export default function GratitudeJournal() {
         text: cipherText,
         savedAt: new Date().toISOString(),
         stale: false,
+        synced: false,
       };
 
       // 真的要接後端時，這裡送出去的就只有 cipher.text，明文不離開瀏覽器。
@@ -214,6 +221,12 @@ export default function GratitudeJournal() {
           cipher,
         };
       });
+
+      if (mode === "submitted") {
+        // 收起編輯欄位，換成完成畫面；頁面會變短，捲回上面才看得到那張卡片。
+        setEditing(null);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
 
       // 本機的加密紀錄也變了，讓月曆與匯出重新取值。
       setSyncedAt((value) => value + 1);
@@ -313,12 +326,21 @@ export default function GratitudeJournal() {
   const hasContent = filledCount > 0 || entry.notes.trim() !== "";
   const canSubmit = filledCount > 0;
 
+  /**
+   * 這一天已經送出、而且沒有按「修改這一天」。
+   * 寫日記是有結束的：這時候把輸入欄位收起來，換成一張完成卡片。
+   */
+  const isComplete = entry.status === "submitted" && editing !== dateKey;
+
   return (
     <div className="mx-auto w-full max-w-md px-3 pt-6 pb-4 sm:px-4">
       <header className="mb-4">
         <p className="text-sm text-ink-muted">{greeting}，</p>
         <h1 className="mt-1 text-2xl leading-snug font-semibold text-ink">
-          {TAB_HEADINGS[tab]}
+          {/* 寫完了就別再問「今天有什麼值得感謝？」，那是還沒寫的人才需要的提問。 */}
+          {tab === "write" && isComplete
+            ? "今天已經寫完了"
+            : TAB_HEADINGS[tab]}
         </h1>
       </header>
 
@@ -354,19 +376,34 @@ export default function GratitudeJournal() {
             onChange={handleDateChange}
           />
 
-          <ThreeThingsList
-            items={entry.items}
-            maxItems={MAX_ITEMS}
-            onItemChange={handleItemChange}
-            onAdd={handleAddItem}
-            onRemove={handleRemoveItem}
-          />
+          {isComplete ? (
+            <DayCompleteCard
+              dateKey={dateKey}
+              items={entry.items
+                .map((item) => item.text.trim())
+                .filter((text) => text !== "")}
+              notes={entry.notes.trim()}
+              cipher={entry.cipher}
+              inWorkspace={workspace !== null}
+              onReview={() => changeTab("history")}
+            />
+          ) : (
+            <>
+              <ThreeThingsList
+                items={entry.items}
+                maxItems={MAX_ITEMS}
+                onItemChange={handleItemChange}
+                onAdd={handleAddItem}
+                onRemove={handleRemoveItem}
+              />
 
-          <NotesField
-            value={entry.notes}
-            maxLength={NOTES_MAX_LENGTH}
-            onChange={handleNotesChange}
-          />
+              <NotesField
+                value={entry.notes}
+                maxLength={NOTES_MAX_LENGTH}
+                onChange={handleNotesChange}
+              />
+            </>
+          )}
 
           <WorkspaceFeed
             dateKey={dateKey}
@@ -383,13 +420,14 @@ export default function GratitudeJournal() {
         </p>
 
         <ActionBar
+          mode={isComplete ? "done" : "edit"}
           canSave={hasContent}
           canSubmit={canSubmit}
-          isSubmitted={entry.status === "submitted"}
           hasPassphrase={hasPassphrase}
           busy={busy}
           message={feedback}
           onSaveDraft={handleSaveDraft}
+          onEdit={() => setEditing(dateKey)}
         />
       </form>
 
