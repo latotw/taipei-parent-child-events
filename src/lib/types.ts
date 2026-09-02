@@ -43,6 +43,20 @@ export type LocalCipher = {
 };
 
 /**
+ * 從備份檔還原回來、準備寫進日記的一天。
+ * ciphertext 一定有值：加密備份用原本的 envelope，明文備份重新加密後才會走到這裡。
+ */
+export type ImportedDay = {
+  /** YYYY-MM-DD */
+  date: string;
+  items: string[];
+  notes: string;
+  ciphertext: string;
+  /** 這筆紀錄當初的時間，ISO 字串 */
+  savedAt: string;
+};
+
+/**
  * 真正被加密的資料結構（明文 payload）。
  * 刻意不帶 React 用的 id，解密後就是乾淨的日記內容。
  */

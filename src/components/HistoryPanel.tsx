@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import BackupPanel from "@/components/BackupPanel";
 import CalendarView from "@/components/CalendarView";
 import EntryList, { type EntryListItem } from "@/components/EntryList";
+import ImportPanel from "@/components/ImportPanel";
 import { usePassphrase } from "@/components/PassphraseProvider";
 import { useWorkspace } from "@/components/WorkspaceProvider";
 import { collectEntries } from "@/lib/backup";
@@ -13,7 +14,7 @@ import { decryptJournal } from "@/lib/crypto";
 import { formatFullDate, todayKey } from "@/lib/date";
 import { describeSyncError } from "@/lib/supabase/errors";
 import { pullEntries, pullEntryDates } from "@/lib/supabase/workspace";
-import type { LocalCipher } from "@/lib/types";
+import type { ImportedDay, LocalCipher } from "@/lib/types";
 
 type Props = {
   /** 這台裝置上每一天的加密結果 */
@@ -26,6 +27,14 @@ type Props = {
   onJumpToDate: (dateKey: string) => void;
   /** 刪掉某一天自己寫的紀錄 */
   onDelete: (dateKey: string) => void;
+  /** 這個頁面裡已經有內容的日期，匯入時用來判斷會不會蓋掉東西 */
+  existingDates: string[];
+  /** 把備份檔還原回來的那幾天寫進日記 */
+  onImport: (
+    days: ImportedDay[],
+    options: { sync: boolean },
+    onProgress: (done: number, total: number) => void,
+  ) => Promise<{ applied: number; syncFailed: number }>;
 };
 
 export default function HistoryPanel({
@@ -34,6 +43,8 @@ export default function HistoryPanel({
   active,
   onJumpToDate,
   onDelete,
+  existingDates,
+  onImport,
 }: Props) {
   const { workspace } = useWorkspace();
   const { passphrase, version } = usePassphrase();
@@ -250,6 +261,14 @@ export default function HistoryPanel({
         className="rounded-3xl border border-line bg-card p-4 shadow-soft"
       >
         <BackupPanel localCiphers={localCiphers} />
+      </section>
+
+      {/* 匯出與匯入放在一起——「拿得回自己的資料」是同一件事的兩半 */}
+      <section
+        aria-label="資料匯入"
+        className="rounded-3xl border border-line bg-card p-4 shadow-soft"
+      >
+        <ImportPanel existingDates={existingDates} onImport={onImport} />
       </section>
     </div>
   );

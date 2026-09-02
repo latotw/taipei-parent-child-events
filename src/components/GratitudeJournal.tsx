@@ -28,6 +28,7 @@ import { formatFullDate, greetingFor, todayKey } from "@/lib/date";
 import type {
   CipherRecord,
   DayEntry,
+  ImportedDay,
   JournalByDate,
   JournalPayload,
   LocalCipher,
@@ -310,6 +311,97 @@ export default function GratitudeJournal() {
     [entry],
   );
 
+  /**
+   * 從備份檔還原幾天的紀錄。
+   *
+   * 先寫進 journal（就算之後同步失敗，使用者至少看得到資料回來了），
+   * 再逐筆上傳。上傳成功的才標記 synced——畫面上不能謊稱已同步。
+   */
+  const importDays = useCallback(
+    async (
+      days: ImportedDay[],
+      options: { sync: boolean },
+      onProgress: (done: number, total: number) => void,
+    ): Promise<{ applied: number; syncFailed: number }> => {
+      setJournal((prev) => {
+        const next = { ...prev };
+        for (const day of days) {
+          next[day.date] = {
+            items: (day.items.length > 0 ? day.items : [""]).map((text) => ({
+              id: createId(),
+              text,
+            })),
+            notes: day.notes,
+            // 這些是當初寫完送出過的日子，還原後就該是完成的樣子。
+            status: "submitted",
+            cipher: {
+              text: day.ciphertext,
+              savedAt: day.savedAt,
+              stale: false,
+              synced: false,
+            },
+          };
+        }
+        return next;
+      });
+
+      const syncedDates: string[] = [];
+      let syncFailed = 0;
+
+      if (options.sync && workspace) {
+        for (const [index, day] of days.entries()) {
+          onProgress(index, days.length);
+          try {
+            await pushEntry({
+              workspaceId: workspace.id,
+              entryDate: day.date,
+              ciphertext: day.ciphertext,
+            });
+            syncedDates.push(day.date);
+          } catch {
+            // 單筆失敗不該中斷整份還原，最後一起回報有幾天沒上去。
+            syncFailed += 1;
+          }
+        }
+      }
+
+      if (syncedDates.length > 0) {
+        setJournal((prev) => {
+          const next = { ...prev };
+          for (const date of syncedDates) {
+            const day = next[date];
+            if (day?.cipher) {
+              next[date] = { ...day, cipher: { ...day.cipher, synced: true } };
+            }
+          }
+          return next;
+        });
+      }
+
+      // 月曆、匯出、共享列表都要重新取值。
+      setSyncedAt((value) => value + 1);
+      return { applied: days.length, syncFailed };
+    },
+    [workspace],
+  );
+
+  /**
+   * 這個頁面裡已經有內容的日期。匯入時用來判斷會不會蓋掉東西——
+   * 包含還沒暫存的打字內容，那也是會被覆蓋掉的東西。
+   */
+  const existingDates = useMemo(
+    () =>
+      Object.entries(journal)
+        .filter(
+          ([, day]) =>
+            day.cipher !== null ||
+            day.notes.trim() !== "" ||
+            day.items.some((item) => item.text.trim() !== ""),
+        )
+        .map(([date]) => date),
+    [journal],
+  );
+
   /** 這台裝置上所有已加密的日子，給歷史回顧與匯出用。 */
   const localCiphers = useMemo<LocalCipher[]>(
     () =>
@@ -442,6 +534,8 @@ export default function GratitudeJournal() {
           refreshToken={syncedAt}
           active={tab === "history"}
           onDelete={handleDelete}
+          existingDates={existingDates}
+          onImport={importDays}
           onJumpToDate={(nextKey) => {
             handleDateChange(nextKey);
             changeTab("write");
