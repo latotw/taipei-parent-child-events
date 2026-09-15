@@ -3,7 +3,9 @@ name: Taipei Parent-Child Crawler
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 7 * * *'
+    # 台灣時間每月 7, 9, 10, 19, 20, 21, 22, 23, 24, 25, 26 號的早上 10:00
+    # 對應 UTC 時間為 02:00
+    - cron: '0 2 7,9,10,19,20,21,22,23,24,25,26 * *'
 
 jobs:
   run-crawler:
