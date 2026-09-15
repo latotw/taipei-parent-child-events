@@ -1,0 +1,36 @@
+name: Taipei Parent-Child Crawler
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 7 * * *'
+
+jobs:
+  run-crawler:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright requests beautifulsoup4 gspread
+          playwright install chromium
+
+      - name: Restore Playwright State
+        run: |
+          mkdir -p ~/Desktop/親子館活動
+          echo "${{ secrets.PLAYWRIGHT_STATE_B64 }}" | base64 --decode > ~/Desktop/親子館活動/playwright_state.json
+
+      - name: Run Crawler Script
+        run: |
+          python fetch_all_centers_final.py
