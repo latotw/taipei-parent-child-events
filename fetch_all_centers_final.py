@@ -24,7 +24,7 @@ CHILD_BIRTHDAY = date(2024, 10, 13)  # 威許的生日
 # === Email 設定 ===
 GMAIL_SENDER = "weishanyin.tw@gmail.com"
 GMAIL_RECIPIENTS = ["weishanyin.tw@gmail.com", "zonghanyou@gmail.com"]
-GMAIL_APP_PASSWORD = "qriaratxscpxzcat"  # ← 請填入你的 Gmail 應用程式密碼
+GMAIL_APP_PASSWORD = "thsi fkpi hqdk ffms"  # ← 請填入你的 Gmail 應用程式密碼
 
 
 def get_child_age_months() -> int:
