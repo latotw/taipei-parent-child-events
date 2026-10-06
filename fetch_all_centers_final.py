@@ -71,6 +71,20 @@ def filter_activities(all_data: list) -> list:
         if status not in ("尚未開始報名", "我要報名"):
             continue
 
+        # 【改進】改以「活動日期」來計算活動當天的月齡，避免因報名日提早而錯過
+        activity_date_str = row.get("活動日期", "")
+        target_months = child_months  # 預設為當前月齡
+        if activity_date_str:
+            try:
+                act_dt = datetime.strptime(activity_date_str.strip(), "%Y/%m/%d")
+                # 計算活動當天威許的月齡
+                m_diff = (act_dt.year - CHILD_BIRTHDAY.year) * 12 + (act_dt.month - CHILD_BIRTHDAY.month)
+                if act_dt.day < CHILD_BIRTHDAY.day:
+                    m_diff -= 1
+                target_months = max(m_diff, 0)
+            except Exception:
+                pass
+
         min_result = label_to_months(row.get("限制最小月齡", ""))
         max_result = label_to_months(row.get("限制最大月齡", ""))
 
@@ -84,20 +98,20 @@ def filter_activities(all_data: list) -> list:
             filtered.append(row)
             continue
 
-        # 4. 檢查最小月齡限制
+        # 4. 檢查最小月齡限制（以活動當天月齡為準）
         if min_result is not None:
             min_m, _ = min_result
-            if child_months < min_m:
+            if target_months < min_m:
                 continue
 
-        # 5. 檢查最大月齡限制（嚴格比對）
+        # 5. 檢查最大月齡限制（以活動當天月齡為準，嚴格比對）
         if max_result is not None:
             max_m, exclusive = max_result
             if exclusive:
-                if child_months >= max_m:
+                if target_months >= max_m:
                     continue
             else:
-                if child_months > max_m:
+                if target_months > max_m:
                     continue
 
         filtered.append(row)
@@ -531,7 +545,7 @@ def main():
         # 篩選、寫入 Google Sheet、寄信、上傳 GitHub
         filtered = filter_activities(all_data)
         upload_to_google_sheet(all_data, filtered)
-        send_email_notification(filtered)
+        send_email_notification(filtered) # 這裡會把所有通過篩選的清單完整寄出
         upload_json_to_github(str(latest_json_path))
 
 
