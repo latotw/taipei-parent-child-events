@@ -1,5 +1,7 @@
 import os, base64, requests
-from typing import Optional
+import calendar
+from html import escape
+from typing import Optional, Tuple
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
@@ -11,11 +13,11 @@ from email.mime.multipart import MIMEMultipart
 WEEKDAY_MAP = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
 
 # === Google Sheet 設定 ===
-GSHEET_KEY_PATH = Path.home() / "Desktop" / "親子館活動" / "forautomation.json"
+GSHEET_KEY_PATH = Path(os.getenv("GSHEET_KEY_PATH", str(Path.home() / "Desktop" / "親子館活動" / "forautomation.json")))
 GSHEET_SPREADSHEET_ID = "1NlzDoTerXESuPxl9nTZGFzYHIcsbQXGamp3J3uUjglk"
 
 # === 登入狀態存儲路徑 ===
-OUTPUT_DIR = Path.home() / "Desktop" / "親子館活動"
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", str(Path.home() / "Desktop" / "親子館活動")))
 STORAGE_STATE_PATH = OUTPUT_DIR / "playwright_state.json"
 
 # === 小朋友 & 篩選設定 ===
@@ -24,7 +26,25 @@ CHILD_BIRTHDAY = date(2024, 10, 13)  # 威許的生日
 # === Email 設定 ===
 GMAIL_SENDER = "weishanyin.tw@gmail.com"
 GMAIL_RECIPIENTS = ["weishanyin.tw@gmail.com", "zonghanyou@gmail.com"]
-GMAIL_APP_PASSWORD = "qzei gnlh gamb npod"  # ← 請填入你的 Gmail 應用程式密碼
+# 為安全起見，不把密碼放在程式中。可用環境變數或本機隱藏檔。
+GMAIL_PASSWORD_FILE = OUTPUT_DIR / ".gmail_app_password"
+# 搜尋本月和下個月。設為 2 可搜尋到下下個月。
+SEARCH_MONTHS_AHEAD = max(0, int(os.getenv("SEARCH_MONTHS_AHEAD", "1")))
+SHEET_HEADERS = ["館別", "活動名稱", "活動日期", "活動是星期幾", "活動時間",
+                 "報名開始日期", "報名狀態", "對象", "限制最小月齡", "限制最大月齡"]
+FILTERED_TAB_TITLE = "威許適合的活動"
+HISTORY_TAB_TITLE = "通知歷史"
+
+
+def load_gmail_password() -> str:
+    """優先使用環境變數；排程也可從本機隱藏檔讀取。"""
+    password = os.getenv("GMAIL_APP_PASSWORD", "").strip()
+    if password:
+        return password.replace(" ", "")
+    if GMAIL_PASSWORD_FILE.is_file():
+        return GMAIL_PASSWORD_FILE.read_text(encoding="utf-8").strip().replace(" ", "")
+    return ""
+
 
 
 def get_child_age_months() -> int:
@@ -121,72 +141,112 @@ def filter_activities(all_data: list) -> list:
 
 
 
-def upload_filtered_to_sheet(gc, filtered_data: list):
-    sh = gc.open_by_key(GSHEET_SPREADSHEET_ID)
-    ws_title = "威許適合的活動"
-    try:
-        worksheet = sh.worksheet(ws_title)
-    except Exception:
-        worksheet = sh.add_worksheet(title=ws_title, rows=200, cols=10)
+def _sheet_values(data: list, headers: list) -> list:
+    return [[str(record.get(key, "") or "") for key in headers] for record in data]
 
-    headers = ["館別", "活動名稱", "活動日期", "活動是星期幾", "活動時間",
-                "報名開始日期", "報名狀態", "對象", "限制最小月齡", "限制最大月齡"]
-    rows = [headers]
-    for row in filtered_data:
-        rows.append([row.get(h, "") for h in headers])
 
+def _write_current_sheet(worksheet, records: list) -> None:
+    """覆蓋最新資料，並確認寫入內容與寄信資料一致。"""
+    rows = [SHEET_HEADERS] + _sheet_values(records, SHEET_HEADERS)
     worksheet.clear()
-    worksheet.update(range_name="A1", values=rows)
+    worksheet.update(range_name="A1", values=rows, value_input_option="RAW")
     worksheet.freeze(rows=1)
     worksheet.format("A1:J1", {"textFormat": {"bold": True}})
-    print(f"✅ 已寫入工作表「{ws_title}」：共 {len(filtered_data)} 筆")
+
+    actual = worksheet.get(f"A1:J{len(rows)}", value_render_option="UNFORMATTED_VALUE")
+    # Sheets API 會移除每列末端的空白欄位，因此先補齊再比較。
+    normalize = lambda data: [[str(v) for v in (row + [""] * (len(SHEET_HEADERS) - len(row)))]
+                              for row in data]
+    if normalize(actual) != normalize(rows):
+        raise RuntimeError(f"Google Sheet「{worksheet.title}」寫入後驗證失敗")
 
 
-def send_email_notification(filtered_data: list):
-    if not GMAIL_APP_PASSWORD:
-        return False
+def _append_notification_history(spreadsheet, filtered_data: list, run_id: str) -> str:
+    """把當次通知永久追加到歷史分頁，並回傳指向該批資料的連結。"""
+    import gspread
+    try:
+        history = spreadsheet.worksheet(HISTORY_TAB_TITLE)
+    except gspread.exceptions.WorksheetNotFound:
+        history = spreadsheet.add_worksheet(title=HISTORY_TAB_TITLE, rows=1000, cols=11)
 
+    expected_headers = ["通知批次"] + SHEET_HEADERS
+    current_headers = history.row_values(1)
+    if not current_headers:
+        history.update(range_name="A1", values=[expected_headers], value_input_option="RAW")
+        history.freeze(rows=1)
+        history.format("A1:K1", {"textFormat": {"bold": True}})
+    elif current_headers != expected_headers:
+        raise RuntimeError("通知歷史分頁欄位不符，為避免覆寫舊資料已停止寄信")
+
+    history_rows = [[run_id] + row for row in _sheet_values(filtered_data, SHEET_HEADERS)]
+    result = history.append_rows(history_rows, value_input_option="RAW", insert_data_option="INSERT_ROWS")
+    updated_range = result.get("updates", {}).get("updatedRange", "")
+    match = re.search(r"![A-Z]+(\d+):[A-Z]+(\d+)$", updated_range)
+    if not match:
+        raise RuntimeError(f"無法確認歷史資料寫入位置：{updated_range!r}")
+    start_row, end_row = map(int, match.groups())
+    if end_row - start_row + 1 != len(filtered_data):
+        raise RuntimeError("歷史資料筆數與 Email 清單不一致")
+
+    actual = history.get(f"A{start_row}:K{end_row}", value_render_option="UNFORMATTED_VALUE")
+    # 僅對不可缺少的欄位及每筆紀錄的批次 ID 做逐筆驗證。
+    if len(actual) != len(history_rows) or any(
+        len(got) < 4 or [str(v) for v in got[:4]] != wanted[:4]
+        for got, wanted in zip(actual, history_rows)
+    ):
+        raise RuntimeError("歷史資料讀回驗證失敗，因此不寄送通知")
+
+    print(f"📚 已保存 {len(history_rows)} 筆通知歷史：{HISTORY_TAB_TITLE} {start_row}–{end_row} 列")
+    return (f"https://docs.google.com/spreadsheets/d/{GSHEET_SPREADSHEET_ID}/edit"
+            f"#gid={history.id}&range=A{start_row}%3AK{end_row}")
+
+
+def send_email_notification(filtered_data: list, archived_sheet_url: str) -> bool:
     if not filtered_data:
         print("📭 沒有符合條件的活動，不寄信。")
         return True
+    if not archived_sheet_url:
+        print("⚠️ 缺少已驗證的歷史資料連結；停止寄信，避免 Email 和 Sheet 不一致。")
+        return False
+
+    password = load_gmail_password()
+    if not password:
+        print(f"⚠️ Gmail 密碼未設定。請設定 GMAIL_APP_PASSWORD 或建立 {GMAIL_PASSWORD_FILE}")
+        return False
 
     child_months = get_child_age_months()
     today_str = datetime.now().strftime("%Y/%m/%d")
     subject = f"🎯 威許的週末親子館活動（{today_str}，共 {len(filtered_data)} 筆）"
 
     html_rows = ""
-    for i, row in enumerate(filtered_data, 1):
+    for i, record in enumerate(filtered_data, 1):
         bg = "#f9f9f9" if i % 2 == 0 else "#ffffff"
-        html_rows += f"""
-        <tr style="background:{bg}">
-            <td style="padding:8px;border:1px solid #ddd">{row.get('館別','')}</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('活動名稱','')}</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('活動日期','')}（{row.get('活動是星期幾','')}）</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('活動時間','')}</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('報名開始日期','')}</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('報名狀態','')}</td>
-            <td style="padding:8px;border:1px solid #ddd">{row.get('對象','')}</td>
-        </tr>"""
+        cells = [
+            record.get("館別", ""), record.get("活動名稱", ""),
+            f"{record.get('活動日期', '')}（{record.get('活動是星期幾', '')}）",
+            record.get("活動時間", ""), record.get("報名開始日期", ""),
+            record.get("報名狀態", ""), record.get("對象", "")
+        ]
+        html_rows += f'<tr style="background:{bg}">' + "".join(
+            f'<td style="padding:8px;border:1px solid #ddd">{escape(str(cell))}</td>'
+            for cell in cells
+        ) + '</tr>'
 
     html_body = f"""
     <html><body>
-    <p>Hi～以下是今天篩選出<b>威許</b>（目前 {child_months // 12} 歲 {child_months % 12} 個月）適合的<b>週末</b>親子館活動：</p>
+    <p>Hi～以下是今天篩選出<b>威許</b>（目前 {child_months // 12} 歲 {child_months % 12} 個月）
+       適合的<b>週末</b>親子館活動：</p>
     <table style="border-collapse:collapse;font-size:14px;font-family:sans-serif">
         <tr style="background:#4a90d9;color:white">
-            <th style="padding:8px;border:1px solid #ddd">館別</th>
-            <th style="padding:8px;border:1px solid #ddd">活動名稱</th>
-            <th style="padding:8px;border:1px solid #ddd">活動日期</th>
-            <th style="padding:8px;border:1px solid #ddd">活動時間</th>
-            <th style="padding:8px;border:1px solid #ddd">報名開始日期</th>
-            <th style="padding:8px;border:1px solid #ddd">報名狀態</th>
-            <th style="padding:8px;border:1px solid #ddd">對象</th>
+            <th>館別</th><th>活動名稱</th><th>活動日期</th><th>活動時間</th>
+            <th>報名開始日期</th><th>報名狀態</th><th>對象</th>
         </tr>
         {html_rows}
     </table>
     <p style="margin-top:16px;color:#666;font-size:13px">
-        📊 <a href="https://docs.google.com/spreadsheets/d/{GSHEET_SPREADSHEET_ID}">
-        點此查看完整 Google Sheet</a>
+        📊 <a href="{escape(archived_sheet_url, quote=True)}">查看這封 Email 對應的活動清單（通知歷史）</a>
     </p>
+    <p style="color:#777;font-size:12px">這是寄信當時的快照；最新的報名狀態仍以官方網站為準。</p>
     </body></html>
     """
 
@@ -198,7 +258,7 @@ def send_email_notification(filtered_data: list):
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            server.login(GMAIL_SENDER, password)
             server.send_message(msg)
         print(f"📧 已寄出通知信到 {', '.join(GMAIL_RECIPIENTS)}")
         return True
@@ -222,6 +282,10 @@ def send_login_expired_alert():
     </ol>
     </body></html>
     """
+    password = load_gmail_password()
+    if not password:
+        print("⚠️ 無法寄送登入過期警報：未設定 Gmail 密碼")
+        return
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = GMAIL_SENDER
@@ -230,7 +294,7 @@ def send_login_expired_alert():
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            server.login(GMAIL_SENDER, password)
             server.send_message(msg)
         print("🚨 已寄出登入過期警告信！")
     except Exception as e:
@@ -310,9 +374,11 @@ def parse_age_range(text: str):
         min_m = normalize_age_token(t.split("以上")[0])
         return (months_to_label(min_m), "")
     if "以下" in t or "未滿" in t:
-        max_m = normalize_age_token(re.split("以下|未滿", t)[0])
+        # "未滿3歲" / "3歲以下" 兩種寫法均能解析；未滿不含上限。
+        max_text = t.replace("未滿", "").replace("以下", "")
+        max_m = normalize_age_token(max_text)
         prefix = "<" if "未滿" in t else ""
-        return ("0m", prefix + months_to_label(max_m if max_m else 12))
+        return ("0m", prefix + months_to_label(max_m)) if max_m else ("", "")
     single = normalize_age_token(t)
     if single: return ("0m", months_to_label(single))
     if "學齡前" in t: return ("0m", months_to_label(84))
@@ -352,17 +418,22 @@ def parse_activity_fields(card, center_name: str):
         "限制最大月齡": max_age,
     }
 
-import calendar
+def get_search_date_range(today: date) -> Tuple[str, str]:
+    """本月第一天到 SEARCH_MONTHS_AHEAD 個月後的月底，可跨年。"""
+    first = today.replace(day=1)
+    month_index = today.year * 12 + today.month - 1 + SEARCH_MONTHS_AHEAD
+    end_year, end_month_zero = divmod(month_index, 12)
+    end_month = end_month_zero + 1
+    end = date(end_year, end_month, calendar.monthrange(end_year, end_month)[1])
+    return first.strftime("%Y/%m/%d"), end.strftime("%Y/%m/%d")
+
 
 def fetch_activities_for_center(page, pfid, name):
     selector = "#pfid"
     page.wait_for_selector(selector, state="attached", timeout=10000)
     
-    # 計算當月第一天與最後一天 (例如 2026/09/01 ~ 2026/09/30)
-    today = date.today()
-    first_day = today.replace(day=1).strftime("%Y/%m/%d")
-    _, last_day_num = calendar.monthrange(today.year, today.month)
-    last_day = today.replace(day=last_day_num).strftime("%Y/%m/%d")
+    # 查詢本月與未來月份（預設下一個月）；避免漏掉提早開放報名的活動。
+    first_day, last_day = get_search_date_range(date.today())
 
     # 透過 JS 設定館別、填入日期並觸發查詢
     page.evaluate("""({sel, val, sDate, eDate}) => {
@@ -408,38 +479,35 @@ def fetch_activities_for_center(page, pfid, name):
     return activities
 
 
-def upload_to_google_sheet(all_data: list, filtered_data: list):
+def upload_to_google_sheet(all_data: list, filtered_data: list, run_id: str) -> Optional[str]:
+    """先更新 Sheet、核對資料並保留歷史；成功才回傳 Email 專用連結。"""
     try:
         import gspread
     except ImportError:
-        print("⚠️ 尚未安裝 gspread")
-        return False
+        print("⚠️ 尚未安裝 gspread；為避免寄信但 Sheet 不同步，本次不寄信")
+        return None
 
-    key_path = GSHEET_KEY_PATH
-    if not key_path.exists():
-        return False
+    if not GSHEET_KEY_PATH.is_file():
+        print(f"⚠️ 找不到 Google Sheet 憑證：{GSHEET_KEY_PATH}；本次不寄信")
+        return None
 
     try:
-        gc = gspread.service_account(filename=str(key_path))
+        gc = gspread.service_account(filename=str(GSHEET_KEY_PATH))
         sh = gc.open_by_key(GSHEET_SPREADSHEET_ID)
-        worksheet = sh.sheet1
+        _write_current_sheet(sh.sheet1, all_data)
+        try:
+            filtered_ws = sh.worksheet(FILTERED_TAB_TITLE)
+        except gspread.exceptions.WorksheetNotFound:
+            filtered_ws = sh.add_worksheet(title=FILTERED_TAB_TITLE, rows=200, cols=10)
+        _write_current_sheet(filtered_ws, filtered_data)
+        print(f"✅ 已同步最新活動 {len(all_data)} 筆，符合條件 {len(filtered_data)} 筆")
 
-        headers = ["館別", "活動名稱", "活動日期", "活動是星期幾", "活動時間",
-                    "報名開始日期", "報名狀態", "對象", "限制最小月齡", "限制最大月齡"]
-        rows = [headers]
-        for row in all_data:
-            rows.append([row.get(h, "") for h in headers])
-
-        worksheet.clear()
-        worksheet.update(range_name="A1", values=rows)
-        worksheet.freeze(rows=1)
-        worksheet.format("A1:J1", {"textFormat": {"bold": True}})
-
-        upload_filtered_to_sheet(gc, filtered_data)
-        return True
+        if not filtered_data:
+            return f"https://docs.google.com/spreadsheets/d/{GSHEET_SPREADSHEET_ID}/edit#gid={filtered_ws.id}"
+        return _append_notification_history(sh, filtered_data, run_id)
     except Exception as e:
-        print(f"⚠️ 寫入 Google Sheet 失敗：{e}")
-        return False
+        print(f"⚠️ Google Sheet 上傳或驗證失敗，本次不寄信：{e}")
+        return None
 
 
 def upload_json_to_github(local_json_path: str, owner: str = "latotw", repo: str = "taipei-parent-child-events", branch: str = "main", repo_path: str = "activities.json", token_env: str = "GITHUB_TOKEN"):
@@ -544,9 +612,13 @@ def main():
 
         # 篩選、寫入 Google Sheet、寄信、上傳 GitHub
         filtered = filter_activities(all_data)
-        upload_to_google_sheet(all_data, filtered)
-        send_email_notification(filtered) # 這裡會把所有通過篩選的清單完整寄出
-        upload_json_to_github(str(latest_json_path))
+        archive_url = upload_to_google_sheet(all_data, filtered, run_id=timestamp)
+        if archive_url:
+            send_email_notification(filtered, archive_url)
+        else:
+            print("⛔ 因 Google Sheet 沒有完成同步，本次不發送活動通知 Email")
+        if not upload_json_to_github(str(latest_json_path)):
+            print("ℹ️ GitHub JSON 未更新（請檢查 GITHUB_TOKEN 與 GitHub 存取權限）")
 
 
 if __name__ == "__main__":
